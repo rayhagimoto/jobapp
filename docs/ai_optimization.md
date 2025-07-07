@@ -1,314 +1,138 @@
 # AI Resume Optimization Pipeline
 
-This document details the AI-powered resume optimization pipeline, including the roles of different models, validation processes, and optimization strategies.
+This document describes the actual implementation of the AI-powered resume optimization pipeline in JobApp, as found in:
+- [jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)
+- [jobapp/resume_writer/batch_optimizer.py](../jobapp/resume_writer/batch_optimizer.py)
+- [jobapp/resume_writer/utils.py](../jobapp/resume_writer/utils.py)
 
-## Pipeline Overview
+## Overview
 
-The resume optimization process follows a multi-stage pipeline:
+The resume optimization system is a multi-phase pipeline that takes a base resume, a job description, and a user's experience, and iteratively edits the resume to maximize relevance for a specific job. The pipeline is built using LangGraph and is highly modular, with each phase implemented as a class-based node.
 
-1. Initial Optimization
-2. Validation
-3. Refinement (if needed)
-4. Final Formatting
+---
 
-```mermaid
-graph TD
-    A[Job Description Input] --> B[Initial Optimization]
-    B --> C[Content Validation]
-    C -->|Valid| D[Final Formatting]
-    C -->|Invalid| E[Refinement]
-    E --> C
-    D --> F[Optimized Resume]
-```
+## Pipeline Phases (Actual Implementation)
 
-## Model Roles
+### 1. **Input Loading**
+- Validates and loads the input resume (YAML), job description, and experiences.
+- Creates a deep copy of the resume for editing (`edited_resume`).
+- Initializes intermediates and chat histories for traceability.
 
-### 1. Optimization Model (Gemini-2.5-flash)
+### 2. **Planning Phase**
+- Four-step planning process using LLM prompts:
+  1. **Job Description Analysis**
+  2. **Skill Mapping & Prioritization**
+  3. **Profile Planning** (updates `profile.description`)
+  4. **Bullet Point Planning**
+- All intermediate LLM outputs and plans are stored in the context for later use.
 
-Primary model responsible for initial resume optimization.
+### 3. **Optimization Phase**
+- Uses the plans from the previous phase to generate targeted resume edits.
+- Only updates sections specified in `section_paths` (from config or CLI).
+- Applies updates using utility functions for YAML manipulation.
 
-**Key Tasks:**
-- Analyze job description requirements
-- Identify relevant experience and skills
-- Rewrite content for keyword optimization
-- Maintain professional tone and clarity
+### 4. **Validation Phase**
+- Runs a validation LLM prompt to check for dishonesty, technical inaccuracies, and over-optimization.
+- If validation fails, triggers a refinement loop (up to a configurable max retries).
+- All validation and refinement steps are logged.
 
-**Configuration:**
-```yaml
-resume_optimization:
-  provider: "google"
-  model: "gemini-2.5-flash"
-  temperature: 0.7    # Higher creativity for content generation
-  max_tokens: 2048    # Longer responses for detailed optimization
-```
+### 5. **Refinement & Formatting**
+- If validation fails, the pipeline attempts to refine the resume using LLM feedback.
+- Formatting phase ensures YAML output is clean and ready for PDF compilation.
 
-### 2. Validation Model (Gemini-2.0-flash)
+### 6. **Output Compilation**
+- Final resume YAML and changelog are saved.
+- Optionally compiles a PDF using the external resume template repo.
 
-Ensures accuracy and honesty of optimized content.
+---
 
-**Key Tasks:**
-- Compare optimized content against original experiences
-- Calculate dishonesty score
-- Identify potential embellishments
-- Validate technical accuracy
+## Selective Section Updates
 
-**Configuration:**
-```yaml
-resume_validation:
-  provider: "google"
-  model: "gemini-2.0-flash"
-  temperature: 0.2    # Lower creativity for factual validation
-  max_tokens: 1024    # Moderate length for validation responses
-```
-
-### 3. Refinement Model (Gemini-2.0-flash)
-
-Handles iterative improvements when validation fails.
-
-**Key Tasks:**
-- Analyze validation failures
-- Adjust content while maintaining accuracy
-- Balance optimization with honesty
-- Preserve original meaning
-
-**Configuration:**
-```yaml
-resume_refinement:
-  provider: "google"
-  model: "gemini-2.0-flash"
-  temperature: 0.5    # Balanced creativity for refinement
-  max_tokens: 1024    # Moderate length for refinements
-```
-
-### 4. Formatting Model (Gemini-1.5-flash)
-
-Ensures consistent formatting and presentation.
-
-**Key Tasks:**
-- Standardize bullet point structure
-- Maintain consistent tense
-- Apply formatting rules
-- Check grammar and style
-
-**Configuration:**
-```yaml
-resume_formatting:
-  provider: "google"
-  model: "gemini-1.5-flash"
-  temperature: 0.3    # Lower creativity for consistent formatting
-  max_tokens: 512     # Shorter responses for formatting tasks
-```
-
-## Validation Process
-
-### Dishonesty Detection
-
-The validation process uses a scoring system to detect potential dishonesty:
-
-```python
-class ValidationScore:
-    PERFECT = 0
-    MINOR_ENHANCEMENT = 10
-    SIGNIFICANT_ENHANCEMENT = 20
-    FABRICATION = 30
-```
-
-**Scoring Criteria:**
-- Word choice enhancement: 5-10 points
-- Skill level inflation: 10-15 points
-- Experience fabrication: 30 points
-- Technical inaccuracy: 20 points
-
-### Validation Loop
-
-```python
-def validate_resume(content, original_experience, max_retries=5):
-    for attempt in range(max_retries):
-        score = validation_model.validate(content, original_experience)
-        
-        if score < THRESHOLD_SCORE:
-            return True, content
-            
-        content = refinement_model.refine(
-            content,
-            validation_feedback,
-            original_experience
-        )
-    
-    return False, original_content  # Revert if validation fails
-```
-
-## Optimization Strategies
-
-### 1. Selective Section Updates
-
-The system uses a path-based syntax to target specific sections for optimization:
+- The pipeline supports path-based targeting of resume sections for optimization (see `section_paths`).
+- Example config:
 
 ```yaml
-sections_to_optimize:
-  - "profile.description"        # Specific subsection
-  - "skills"                     # Entire section
-  - "experience[Company Name]"   # Specific experience entry
+section_paths:
+  - "profile.description"
+  - "skills"
+  - "experience[Company Name]"
 ```
 
-### 2. Keyword Optimization
+---
 
-The optimization model employs several strategies:
+## Keyword & Experience Matching
 
-1. **Keyword Density Analysis**
-   - Extract key requirements from job description
-   - Calculate current keyword presence
-   - Distribute keywords naturally
+- Keyword analysis and experience matching are performed using utility functions in [utils.py](../jobapp/resume_writer/utils.py).
+- The system extracts keywords from the job description and matches them to resume content.
+- Experience matching is used to prioritize which experiences to highlight or rewrite.
 
-2. **Context-Aware Rewrites**
-   - Maintain original meaning
-   - Incorporate job-specific terminology
-   - Preserve quantifiable achievements
+---
 
-3. **Technical Accuracy**
-   - Validate technology mentions
-   - Ensure version compatibility
-   - Maintain technical context
+## Error Handling & Logging
 
-### 3. Experience Matching
+- All phases use structured logging (see [logger.py](../jobapp/core/logger.py)).
+- Errors in model calls, validation, or file I/O are caught and logged with details.
+- If a job fails, the pipeline returns a detailed error reason and skips to the next job in batch mode.
 
-The system matches experiences to job requirements:
+---
 
-```python
-def match_experience(job_reqs, experiences):
-    matches = []
-    for exp in experiences:
-        score = calculate_relevance(job_reqs, exp)
-        if score > MIN_RELEVANCE_SCORE:
-            matches.append((exp, score))
-    return sorted(matches, key=lambda x: x[1], reverse=True)
+## Batch Processing
+
+- Batch optimization is implemented in [batch_optimizer.py](../jobapp/resume_writer/batch_optimizer.py).
+- Jobs are filtered from Google Sheets based on match score and application status.
+- Each job is processed in its own output directory, with logs and outputs saved per job.
+- Batch processing supports skipping existing outputs, max resume limits, and PDF compilation.
+
+**CLI Example:**
+
+```bash
+python -m jobapp.resume_writer.batch_optimizer \
+  --input-resume configs/resume.yaml \
+  --experiences configs/experiences.md \
+  --output-dir ~/Desktop/optimized_resumes/2024-06-10 \
+  --match-score-threshold 70 \
+  --max-resumes 5 \
+  --your-name "Ray Hagimoto"
 ```
 
-## Error Handling
+---
 
-### 1. Model Failures
+## Validation & Refinement
 
-```python
-class ModelError(Exception):
-    def __init__(self, model_name, error_type, details):
-        self.model_name = model_name
-        self.error_type = error_type
-        self.details = details
-```
+- Validation is performed by a dedicated node in the pipeline, using LLM prompts to detect exaggeration, fabrication, or technical errors.
+- If validation fails, the pipeline attempts up to N refinements before reverting to the original content.
+- All validation and refinement steps are tracked in the context and logs.
 
-The system handles various failure modes:
+---
 
-1. **API Errors**
-   - Retry with exponential backoff
-   - Fall back to alternate models
-   - Log detailed error information
+## Utility Functions
 
-2. **Content Validation Failures**
-   - Maximum retry attempts (configurable)
-   - Reversion to original content
-   - Detailed validation feedback
+- [utils.py](../jobapp/resume_writer/utils.py) provides:
+  - Keyword analysis and extraction
+  - Parsing and formatting of LLM YAML output
+  - Changelog formatting for human review
+  - Bullet point change parsing
 
-3. **Timeout Handling**
-   - Configurable timeout per operation
-   - Graceful degradation options
-   - State recovery mechanisms
+---
 
-## Performance Optimization
+## Monitoring & Metrics
 
-### 1. Caching
+- Each job's optimization process is logged with input/output lengths, validation scores, and timing.
+- Logs are saved per job in the output directory for easy debugging.
 
-```python
-class OptimizationCache:
-    def __init__(self):
-        self.cache = {}
-        self.ttl = 24 * 60 * 60  # 24 hours
-        
-    def get_cached_optimization(self, content_hash, job_req_hash):
-        key = f"{content_hash}:{job_req_hash}"
-        return self.cache.get(key)
-```
+---
 
-### 2. Batch Processing
+## Features Not Yet Implemented (Planned)
 
-For multiple job applications:
+- Persistent caching of optimizations (no `OptimizationCache` class yet)
+- True parallel batch processing (currently uses asyncio.gather, but not full parallelism)
+- Mock models for offline testing (not present in code)
+- Automated metrics aggregation (metrics are logged, not aggregated)
+- Some advanced validation/fact-checking features are planned but not yet implemented
 
-```python
-async def batch_optimize(resumes, job_descriptions):
-    tasks = []
-    for resume, job in zip(resumes, job_descriptions):
-        task = asyncio.create_task(
-            optimize_resume(resume, job)
-        )
-        tasks.append(task)
-    return await asyncio.gather(*tasks)
-```
+---
 
-## Development and Testing
-
-### 1. Mock Models
-
-For testing without API calls:
-
-```python
-class MockOptimizationModel:
-    def optimize(self, content, job_desc):
-        return {
-            "optimized_content": content,
-            "optimization_score": 0.85
-        }
-```
-
-### 2. Validation Tests
-
-```python
-def test_validation_accuracy():
-    original = load_test_resume()
-    optimized = optimizer.optimize(original, job_desc)
-    score = validator.validate(optimized, original)
-    assert score < THRESHOLD_SCORE
-```
-
-## Monitoring and Logging
-
-### 1. Optimization Metrics
-
-```python
-class OptimizationMetrics:
-    def __init__(self):
-        self.total_optimizations = 0
-        self.validation_failures = 0
-        self.average_score = 0.0
-        self.model_latencies = {}
-```
-
-### 2. Log Format
-
-```python
-logging.info(
-    "Optimization completed",
-    extra={
-        "original_length": len(original_content),
-        "optimized_length": len(optimized_content),
-        "validation_score": score,
-        "optimization_time": duration,
-        "model_used": model_name
-    }
-)
-```
-
-## Future Improvements
-
-1. **Model Enhancements**
-   - Fine-tuning on successful resumes
-   - Industry-specific optimization patterns
-   - Multi-language support
-
-2. **Validation Improvements**
-   - Enhanced dishonesty detection
-   - Industry-specific validation rules
-   - Automated fact-checking
-
-3. **Performance Optimization**
-   - Parallel validation processing
-   - Improved caching strategies
-   - Batch optimization enhancements 
+## See Also
+- [jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)
+- [jobapp/resume_writer/batch_optimizer.py](../jobapp/resume_writer/batch_optimizer.py)
+- [jobapp/resume_writer/utils.py](../jobapp/resume_writer/utils.py) 

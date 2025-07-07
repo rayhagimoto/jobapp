@@ -1,6 +1,8 @@
 # Browser Modes for LinkedIn Scraper
 
-The LinkedIn scraper now supports three different browser modes, each with its own advantages and use cases.
+The LinkedIn scraper supports three browser modes, each with its own advantages and use cases. Mode selection and CLI argument handling are implemented in:
+- [jobapp/search/main.py](../jobapp/search/main.py)
+- [jobapp/search/linkedin_scraper.py](../jobapp/search/linkedin_scraper.py)
 
 ## Available Browser Modes
 
@@ -54,17 +56,10 @@ python -m jobapp.search.main "DevOps Engineer" --browser-mode=system_chrome \
   --chrome-profile="~/.config/google-chrome"
 ```
 
-## Migration from browser-use
+## Migration and Backward Compatibility
 
-The previous implementation used `browser-use` library with `BrowserSession`, `BrowserProfile`, and `BrowserChannel`. These have been completely removed and replaced with pure Playwright/Patchright implementations for better reliability and performance.
-
-### Breaking Changes
-- Removed `--use-system-chrome` flag (use `--browser-mode=system_chrome` instead)
-- Removed all browser-use dependencies
-- Simplified browser management with direct Playwright/Patchright control
-
-### Backward Compatibility
-The `--use-system-chrome` flag is still supported but deprecated. It will map to `--browser-mode=system_chrome` automatically.
+- The previous `browser-use` library and related flags have been **fully removed**.
+- The `--use-system-chrome` flag is still supported but deprecated; it maps to `--browser-mode=system_chrome` automatically (see [main.py](../jobapp/search/main.py)).
 
 ## Troubleshooting
 
@@ -80,4 +75,10 @@ The `--use-system-chrome` flag is still supported but deprecated. It will map to
 ### Performance
 - Patchright mode: Best for stealth, moderate performance
 - Playwright mode: Good performance, standard detection profile  
-- System Chrome mode: Variable performance, depends on extensions and profile size 
+- System Chrome mode: Variable performance, depends on extensions and profile size
+
+---
+
+See also:
+- [jobapp/search/main.py](../jobapp/search/main.py)
+- [jobapp/search/linkedin_scraper.py](../jobapp/search/linkedin_scraper.py) 

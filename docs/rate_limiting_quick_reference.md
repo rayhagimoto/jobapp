@@ -1,5 +1,9 @@
 # Rate Limiting Quick Reference
 
+This guide summarizes how rate limiting, API key rotation, and quota reset are handled in JobApp. All logic is implemented in:
+- [jobapp/core/llm_interface.py](../jobapp/core/llm_interface.py)
+- [jobapp/core/api_key_manager.py](../jobapp/core/api_key_manager.py)
+
 ## Supported Providers
 
 | Provider   | Free Tier | Cheapest Paid | Reset Time    | Rate Limits |
@@ -58,17 +62,12 @@ models:
 
 ## Error Types & Handling
 
-### RPM (Rate Limit) Errors
-- **Behavior**: Exponential backoff retry
-- **Strategy**: Wait and retry with same key
-- **Duration**: Temporary (seconds to minutes)
+- **RPM (Rate Limit) Errors**: Exponential backoff retry (see LLMInterface)
+- **RPD/Quota Exhaustion Errors**: Immediate key rotation (see APIKeyManager)
+- **Error Pattern Lists**: Maintained in [api_key_manager.py](../jobapp/core/api_key_manager.py) and updated for each provider
+- **Persistent Quota State**: Stored in the user's cache directory (e.g., `~/.cache/jobapp/api_key_state.json`)
 
-### RPD/Quota Exhaustion Errors  
-- **Behavior**: Immediate key rotation
-- **Strategy**: Switch to next available key
-- **Duration**: Until daily/monthly reset
-
-## Common Patterns
+## Usage Patterns
 
 ### Basic Usage
 ```python
@@ -99,20 +98,9 @@ response = llm.send_prompt(
 
 ## Troubleshooting
 
-### "No API keys available" 
-- Check environment variables are set
-- Verify backup keys are configured
-- Check if all keys are quota-exhausted
-
-### Frequent rate limiting
-- Add more backup keys
-- Upgrade to paid tier
-- Implement request batching
-
-### Quota reset issues
-- System handles timezone differences automatically
-- State persists across application restarts
-- Use `manager.reset()` to clear state if needed
+- **"No API keys available"**: Check environment variables, backup keys, and quota exhaustion status. Use `llm.config.get_quota_status()` for details.
+- **Frequent rate limiting**: Add more backup keys, upgrade to paid tier, or batch requests.
+- **Quota reset issues**: The system handles timezone differences and persists state. Use `APIKeyManager.reset()` to clear state if needed.
 
 ## State Files
 
@@ -122,7 +110,7 @@ response = llm.send_prompt(
 ## Testing
 
 ```bash
-# Test without API keys (error detection patterns)
+# Test error detection patterns (without API keys)
 python test_openai_anthropic_integration.py
 
 # Test with API keys (full connectivity)
@@ -136,4 +124,4 @@ python test_openai_anthropic_integration.py
 2. **Use cheapest models** (`gpt-4o-mini`, `claude-3-haiku`)
 3. **Configure backup keys** to avoid downtime
 4. **Monitor usage** via provider dashboards
-5. **Implement request batching** for bulk operations 
+5. **Batch requests** for bulk operations 

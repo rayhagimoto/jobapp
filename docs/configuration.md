@@ -1,38 +1,53 @@
 # Configuration Reference
 
-This document provides a comprehensive reference for JobApp's configuration system, including all available options, their purposes, and how they interact.
+This document provides a comprehensive reference for JobApp's configuration system, updated to match the actual implementation in [jobapp/core/config_manager.py](../jobapp/core/config_manager.py) and related modules.
+
+---
 
 ## Configuration Hierarchy
 
 JobApp uses a layered configuration system with the following precedence (highest to lowest):
 
-1. Environment Variables
-2. User Data Files
-3. Application Config Files
-4. Default Values
+1. **Constructor Parameters / CLI Overrides**
+2. **Environment Variables** (from `~/.config/jobapp/secrets/.env` by default)
+3. **User Config Files** (`~/.config/jobapp/config/*.yaml`)
+4. **Project Config Files** (`JobApp/configs/*.yaml`)
+5. **Default Values** (hardcoded in code)
+
+See: [jobapp/core/config_manager.py](../jobapp/core/config_manager.py)
+
+---
 
 ## Directory Structure
 
 ```
 ~/.config/jobapp/
+├── secrets/
+│   └── .env                    # API keys and credentials (default load location)
 ├── auth/
-│   ├── .env                    # API keys and credentials
 │   ├── gspread_credentials.json # Google Sheets API credentials
 │   └── linkedin_auth.json      # LinkedIn session state
 ├── data/
 │   ├── resume.yaml            # Master resume content
 │   └── experiences.md         # Detailed work history
-└── logs/                      # Application logs
+├── logs/                      # Application logs
+└── config/
+    ├── default.yaml           # Global app settings
+    ├── resume_writer.yaml     # Resume optimization settings
+    └── search.yaml            # Job search configuration
 
 ./configs/
-├── resume.yaml               # Resume optimization settings
-├── search.yaml              # Job search configuration
-└── prompts/                 # AI prompt templates
+├── default.yaml               # Project-level fallback config
+├── resume_writer.yaml         # Project-level resume config
+├── search.yaml                # Project-level search config
+└── prompts/                   # AI prompt templates
 ```
+
+---
 
 ## Environment Variables
 
-Location: `~/.config/jobapp/auth/.env`
+**Location:** `~/.config/jobapp/secrets/.env` (default)
 
 ### Required Variables
 
@@ -62,19 +77,17 @@ DEBUG=true               # Enable debug logging
 LOG_LEVEL=DEBUG         # Set specific log level
 ```
 
+---
+
 ## Application Configuration
 
-Location: `configs/default.yaml`
+**Location:** `~/.config/jobapp/config/default.yaml` (user) or `JobApp/configs/default.yaml` (project fallback)
 
 ### Google Spreadsheet Settings
 
 ```yaml
 google_spreadsheet:
-  # ID of the Google Sheet used for job tracking
-  # Found in the sheet's URL: https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit
-  spreadsheet_id: "your-spreadsheet-id"
-  
-  # Name of the worksheet tab to use
+  spreadsheet_id: "your-spreadsheet-id"  # Found in the sheet's URL
   tab_name: "Data"
 ```
 
@@ -83,7 +96,6 @@ google_spreadsheet:
 ```yaml
 settings:
   models:
-    # AI model configurations
     resume_optimization:
       provider: "google"
       model: "gemini-2.5-flash"
@@ -92,11 +104,13 @@ settings:
     # ... other model settings ...
 ```
 
+---
+
 ## Google Sheets Integration
 
 ### Credentials
 
-Location: `~/.config/jobapp/auth/gspread_credentials.json`
+**Location:** `~/.config/jobapp/auth/gspread_credentials.json`
 
 This file contains the Google service account credentials needed to access the spreadsheet. It should be obtained from the Google Cloud Console and contains sensitive authentication information.
 
@@ -122,12 +136,14 @@ J: Follow-up Date
 The Google Sheets configuration follows this priority order:
 
 1. Constructor parameters (when creating a SheetsManager instance)
-2. Configuration file (`configs/default.yaml`)
+2. Configuration file (`default.yaml`)
 3. Raises ValueError if neither is provided
 
 Example usage in code:
 
 ```python
+from jobapp.core.sheets_manager import SheetsManager
+
 # Using config file values
 sheets_manager = SheetsManager()
 
@@ -138,37 +154,32 @@ sheets_manager = SheetsManager(
 )
 ```
 
+---
+
 ## Resume Configuration
 
-Location: `configs/resume.yaml`
+**Location:** `~/.config/jobapp/config/resume_writer.yaml` (user) or `JobApp/configs/resume_writer.yaml` (project fallback)
 
 ### AI Model Settings
 
 ```yaml
 settings:
   models:
-    # Primary optimization model
     resume_optimization:
-      provider: "google"      # AI provider to use
-      model: "gemini-2.5-flash"  # Specific model
-      temperature: 0.7        # Creativity level
-      max_tokens: 2048       # Response length limit
-      
-    # Validation model
+      provider: "google"
+      model: "gemini-2.5-flash"
+      temperature: 0.7
+      max_tokens: 2048
     resume_validation:
       provider: "google"
       model: "gemini-2.0-flash"
       temperature: 0.2
       max_tokens: 1024
-      
-    # Refinement model
     resume_refinement:
       provider: "google"
       model: "gemini-2.0-flash"
       temperature: 0.5
       max_tokens: 1024
-      
-    # Formatting model
     resume_formatting:
       provider: "google"
       model: "gemini-1.5-flash"
@@ -176,64 +187,46 @@ settings:
       max_tokens: 512
 ```
 
-### Validation Settings
-
-```yaml
-settings:
-  validation:
-    # Used in: AIResumeOptimizer.__init__() (resume_writer/ai_optimizer.py)
-    # Controls whether AI-powered resume validation is performed
-    enabled: true
-    
-    # Used in: ai_optimize_resume() (resume_writer/ai_optimizer.py)
-    # Maximum validation/refinement attempts before giving up
-    max_retries: 5
-    
-    # Used in: validate_resume() (resume_writer/ai_optimizer.py)
-    # Maximum time per validation cycle
-    timeout_seconds: 300
-```
-
 ### Section Optimization
+
+- The pipeline uses `content.sections_to_optimize` for targeted optimization.
+- If not present, it will attempt to infer section paths from the resume YAML structure.
 
 ```yaml
 content:
-  # Used in: apply_selective_resume_updates() (resume_writer/ai_optimizer.py)
-  # Specifies which sections to optimize using path syntax
   sections_to_optimize:
-    - "profile.description"        # Dot notation for subsections
-    - "skills"                     # Entire section
-    - "experience[Company Name]"   # Array item by identifier
-    - "education[University]"      # Matches case-insensitive
+    - "profile.description"
+    - "skills"
+    - "experience[Company Name]"
+    - "education[University]"
 ```
+
+See: [get_section_paths() in config_manager.py](../jobapp/core/config_manager.py)
+
+---
 
 ## Search Configuration
 
-Location: `configs/search.yaml`
+**Location:** `~/.config/jobapp/config/search.yaml` (user) or `JobApp/configs/search.yaml` (project fallback)
 
 ### Search Settings
 
 ```yaml
 search:
-  # Job search criteria
   criteria:
-    max_age_days: 30          # Maximum job posting age
-    min_score: 0.8           # Minimum match score
-    excluded_companies:      # Companies to skip
+    max_age_days: 30
+    min_score: 0.8
+    excluded_companies:
       - "Company A"
       - "Company B"
-    
-  # Browser automation
   browser:
-    use_system_chrome: true  # Use system Chrome
-    headless: true          # Run in headless mode
-    timeout: 30000          # Page load timeout (ms)
-    
-  # Rate limiting
+    use_system_chrome: true
+    headless: true
+    timeout: 30000
   limits:
-    max_pages: 10           # Maximum search pages
-    delay: 2000             # Delay between requests (ms)
-    max_retries: 3          # Failed request retries
+    max_pages: 10
+    delay: 2000
+    max_retries: 3
 ```
 
 ### Scoring Settings
@@ -241,44 +234,41 @@ search:
 ```yaml
 scoring:
   weights:
-    skills: 0.4             # Weight for skills match
-    experience: 0.3         # Weight for experience match
-    education: 0.2          # Weight for education match
-    location: 0.1           # Weight for location match
-    
+    skills: 0.4
+    experience: 0.3
+    education: 0.2
+    location: 0.1
   thresholds:
-    min_skills: 0.6         # Minimum skills match
-    min_experience: 0.5     # Minimum experience match
+    min_skills: 0.6
+    min_experience: 0.5
 ```
+
+---
 
 ## User Data Files
 
 ### Master Resume
 
-Location: `~/.config/jobapp/data/resume.yaml`
+**Location:** `~/.config/jobapp/data/resume.yaml`
 
 ```yaml
 personal:
   name: "John Doe"
   email: "john@example.com"
   location: "San Francisco, CA"
-  
 profile:
   title: "Senior Software Engineer"
   description: "10+ years experience..."
-  
 experience:
   - company: "Tech Corp"
     title: "Senior Developer"
     dates: "2020-present"
     highlights:
       - "Led team of 5 engineers..."
-      
 education:
   - institution: "University"
     degree: "BS Computer Science"
     year: "2015"
-    
 skills:
   languages: ["Python", "JavaScript"]
   frameworks: ["React", "Django"]
@@ -287,7 +277,7 @@ skills:
 
 ### Experiences Document
 
-Location: `~/.config/jobapp/data/experiences.md`
+**Location:** `~/.config/jobapp/data/experiences.md`
 
 ```markdown
 # Work Experience
@@ -309,85 +299,43 @@ Senior Developer
 ...
 ```
 
+---
+
 ## Logging Configuration
 
-Location: Configured via environment variables and code
+- Log level and format can be set via environment variables or code.
+- Log files are written to `~/.config/jobapp/logs/` by default.
 
 ### Log Levels
 
 ```python
-# Available log levels
 LOG_LEVEL = {
-    "DEBUG": Detailed debugging information
-    "INFO": General operational information
-    "WARNING": Warning messages for potential issues
-    "ERROR": Error messages for failures
-    "CRITICAL": Critical failures requiring immediate attention
+    "DEBUG": "Detailed debugging information",
+    "INFO": "General operational information",
+    "WARNING": "Warning messages for potential issues",
+    "ERROR": "Error messages for failures",
+    "CRITICAL": "Critical failures requiring immediate attention"
 }
 ```
 
 ### Log Format
 
 ```python
-# Standard log format
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 ```
 
-### Log Files
-
-```
-~/.config/jobapp/logs/
-├── jobapp.log           # Main application log
-├── browser.log         # Browser automation log
-└── ai_operations.log   # AI interaction log
-```
+---
 
 ## Configuration Validation
 
-The application validates all configuration files against JSON schemas:
+- The documentation references JSON schema validation, but this is **not currently implemented** in [config_manager.py](../jobapp/core/config_manager.py).
+- All config files are loaded and parsed as YAML, with basic error handling for missing or invalid files.
 
-1. **Schema Location**: `jobapp/core/schemas/`
-2. **Validation Time**: At application startup
-3. **Error Handling**: Clear error messages with specific validation failures
-
-### Example Schema
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "settings": {
-      "type": "object",
-      "properties": {
-        "models": {"type": "object"},
-        "validation": {"type": "object"}
-      }
-    },
-    "content": {
-      "type": "object",
-      "properties": {
-        "sections_to_optimize": {
-          "type": "array",
-          "items": {"type": "string"}
-        }
-      }
-    }
-  }
-}
-```
+---
 
 ## Development Configuration
 
-For development and testing, you can use:
-
-1. **Local Override Files**:
-   - Create `configs/local.yaml` for development-specific settings
-   - File is git-ignored
-
-2. **Test Configuration**:
-   - Use `configs/test.yaml` for test-specific settings
-   - Contains mock credentials and test data
-
-3. **Debug Mode**:
-   - Set `DEBUG=true` in `.env`
-   - Enables additional logging and validation 
+- For development and testing, you can use:
+  - `configs/local.yaml` for local overrides (git-ignored)
+  - `configs/test.yaml` for test-specific settings
+  - Set `DEBUG=true` in `.env` for additional logging 

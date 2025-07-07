@@ -1,150 +1,120 @@
 # JobApp Architecture Guide
 
-This document provides a detailed technical overview of JobApp's architecture, components, and design principles.
+This document provides a detailed technical overview of JobApp's architecture, components, and design principles, updated to match the current codebase. All source file references use local links for easy navigation.
 
 ## System Overview
 
-JobApp is built as a modular Python application with three primary subsystems:
+JobApp is a modular Python application with three primary subsystems:
 
-1. Job Search Engine
-2. Resume Optimizer
-3. Core Infrastructure
+1. Job Search Engine ([jobapp/search/](../jobapp/search/))
+2. Resume Optimizer ([jobapp/resume_writer/](../jobapp/resume_writer/))
+3. Core Infrastructure ([jobapp/core/](../jobapp/core/))
 
-Each subsystem is designed to be independently maintainable while sharing common infrastructure components.
+Each subsystem is independently maintainable but shares common infrastructure components.
 
 ## Component Architecture
 
-### 1. Job Search Engine (`jobapp/search/`)
+### 1. Job Search Engine ([jobapp/search/](../jobapp/search/))
 
-The search engine is responsible for automated job discovery and evaluation.
+Responsible for automated job discovery, scraping, and match scoring.
 
 #### Key Components:
 
-- **`linkedin_scraper.py`**
-  - Manages LinkedIn interaction using Playwright
-  - Handles session management and authentication
-  - Implements retry logic and error handling
+- **[linkedin_scraper.py](../jobapp/search/linkedin_scraper.py)**
+  - Manages LinkedIn interaction using Playwright and Patchright
+  - Handles session management, authentication, and browser modes (stealth, system Chrome, native Chromium)
+  - Implements retry logic, error handling, and human-like interaction
   - Extracts structured job data from listings
+  - Integrates Google Sheets for job tracking
 
-- **`browser_agent.py`**
-  - Provides browser automation abstraction
-  - Supports both Playwright-managed and system Chrome
-  - Implements connection pooling and resource cleanup
-  - Handles cross-platform browser detection
-
-- **`job_scorer.py`**
-  - Evaluates job descriptions against user profile
-  - Implements keyword matching and semantic scoring
-  - Calculates match percentages for skills and requirements
-  - Provides detailed scoring breakdown
-
-- **`main.py`**
+- **[main.py](../jobapp/search/main.py)**
   - CLI interface for search operations
-  - Coordinates component interactions
+  - Subcommands: `search` (default), `match-score`
+  - Coordinates scraping and match score calculation
   - Manages output formatting and logging
-  - Handles Google Sheets integration
 
-### 2. Resume Optimizer (`jobapp/resume_writer/`)
+- **[match_score_calculator.py](../jobapp/search/match_score_calculator.py)**
+  - Calculates match scores for jobs using LLMs
+  - Used by the `match-score` CLI subcommand
 
-The optimizer implements a sophisticated AI pipeline for resume customization.
+- **Note:**
+  - There is no `browser_agent.py` file; browser automation is handled within [linkedin_scraper.py](../jobapp/search/linkedin_scraper.py) and [jobapp/core/chrome_manager.py](../jobapp/core/chrome_manager.py).
+  - There is no `job_scorer.py`; match scoring is implemented in [match_score_calculator.py](../jobapp/search/match_score_calculator.py).
 
-#### Components:
+### 2. Resume Optimizer ([jobapp/resume_writer/](../jobapp/resume_writer/))
 
-- **`ai_optimizer.py`**
-  - Implements the core AI optimization pipeline
-  - Manages model interactions and prompt engineering
-  - Handles selective section updates
-  - Implements validation and refinement loops
+Implements the AI pipeline for resume customization and batch optimization.
 
-- **`resume_generator.py`**
-  - Manages resume YAML parsing and generation
-  - Handles LaTeX template integration
-  - Implements PDF compilation
-  - Manages output file organization
+#### Key Components:
 
-- **`filename_formatter.py`**
-  - Implements consistent file naming conventions
-  - Handles date stamping and versioning
-  - Sanitizes filenames for cross-platform compatibility
+- **[main.py](../jobapp/resume_writer/main.py)**
+  - CLI for resume optimization, batch/single job, and PDF compilation
+  - Argument parsing and orchestration
 
-- **`batch_optimizer.py`**
-  - Implements batch processing logic
-  - Manages parallel optimization tasks
-  - Handles error recovery and resumption
-  - Implements progress tracking
+- **[batch_optimizer.py](../jobapp/resume_writer/batch_optimizer.py)**
+  - Batch processing logic for resume optimization
+  - Manages parallel optimization, error handling, and progress tracking
 
-#### AI Pipeline Stages:
+- **[pipelines/langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)**
+  - Implements the core AI optimization pipeline (content planning, generation, validation, refinement)
 
-1. **Job Analysis**
-   - Input: Raw job description
-   - Process: Extract key requirements and priorities
-   - Output: Structured job requirements
+- **[compiler.py](../jobapp/resume_writer/compiler.py)**
+  - Handles LaTeX template integration and PDF compilation
 
-2. **Content Planning**
-   - Input: Job requirements + User experiences
-   - Process: Strategic keyword placement planning
-   - Output: Section-by-section optimization plan
+- **[utils/filename.py](../jobapp/utils/filename.py)**
+  - Implements consistent file naming conventions, date stamping, and sanitization
 
-3. **Content Generation**
-   - Input: Optimization plan + Original resume
-   - Process: AI-powered content rewriting
-   - Output: Optimized resume sections
+- **Note:**
+  - There is no `ai_optimizer.py` or `resume_generator.py`; their described functionality is distributed across the above files.
+  - `filename_formatter.py` is implemented as [utils/filename.py](../jobapp/utils/filename.py).
 
-4. **Validation**
-   - Input: New resume + Original experiences
-   - Process: Truth verification and scoring
-   - Output: Validation report or refinement needs
+#### AI Pipeline Stages (Distributed Implementation):
+1. **Job Analysis**: Extracted in [langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)
+2. **Content Planning**: [langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)
+3. **Content Generation**: [langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)
+4. **Validation**: [langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)
+5. **Refinement**: [langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)
+6. **Formatting**: [compiler.py](../jobapp/resume_writer/compiler.py), [utils/filename.py](../jobapp/utils/filename.py)
 
-5. **Refinement (if needed)**
-   - Input: Validation feedback
-   - Process: Targeted content adjustment
-   - Output: Revised resume sections
-
-6. **Formatting**
-   - Input: Final content
-   - Process: Style consistency check
-   - Output: Production-ready resume
-
-### 3. Core Infrastructure (`jobapp/core/`)
+### 3. Core Infrastructure ([jobapp/core/](../jobapp/core/))
 
 Provides shared services and utilities used across the application.
 
 #### Components:
 
-- **`config_manager.py`**
-  - Implements hierarchical configuration
-  - Manages environment variable integration
-  - Handles path resolution and validation
-  - Implements configuration schema validation
+- **[config_manager.py](../jobapp/core/config_manager.py)**
+  - Hierarchical configuration (env vars, user config, project config, defaults)
+  - Path resolution and validation
+  - Module detection and config merging
 
-- **`sheets_manager.py`**
-  - Manages Google Sheets integration
-  - Implements batch update operations
-  - Handles authentication and credential management
-  - Provides error handling and retry logic
+- **[sheets_manager.py](../jobapp/core/sheets_manager.py)**
+  - Google Sheets integration for job tracking
+  - Batch update operations, authentication, error handling
 
-- **`logger.py`**
-  - Implements structured logging
-  - Manages log rotation and cleanup
-  - Provides context-aware logging helpers
-  - Implements debug mode handling
+- **[logger.py](../jobapp/core/logger.py)**
+  - Structured logging, log rotation, context-aware helpers
 
-- **`llm_interface.py`**
-  - Abstracts LLM provider interactions
-  - Manages API key handling
-  - Implements rate limiting and quotas
-  - Provides fallback handling
+- **[llm_interface.py](../jobapp/core/llm_interface.py)**
+  - LLM provider abstraction, API key management, rate limiting, fallback handling
+
+- **[api_key_manager.py](../jobapp/core/api_key_manager.py)**
+  - API key rotation and quota tracking for rate-limited services
+
+- **[chrome_manager.py](../jobapp/core/chrome_manager.py)**
+  - Cross-platform Chrome browser automation for scraping
 
 ## Data Flow
 
 1. **Job Search Flow**
    ```mermaid
    graph TD
-     A[LinkedIn Search] --> B[Browser Agent]
+     A[LinkedIn Search] --> B[Browser Automation]
      B --> C[Job Extraction]
-     C --> D[Job Scorer]
+     C --> D[Match Score Calculation]
      D --> E[Sheets Manager]
    ```
+   - Browser automation is handled by [linkedin_scraper.py](../jobapp/search/linkedin_scraper.py) and [chrome_manager.py](../jobapp/core/chrome_manager.py).
+   - Match scoring is handled by [match_score_calculator.py](../jobapp/search/match_score_calculator.py).
 
 2. **Resume Optimization Flow**
    ```mermaid
@@ -157,13 +127,14 @@ Provides shared services and utilities used across the application.
      E -->|Fail| G[Refinement]
      G --> D
    ```
+   - All pipeline stages are implemented in [langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py) and orchestrated by [batch_optimizer.py](../jobapp/resume_writer/batch_optimizer.py).
 
 ## Configuration Architecture
 
 The system uses a hierarchical configuration system:
 
 1. **Environment Layer**
-   - Location: `~/.config/jobapp/auth/.env`
+   - Location: `~/.config/jobapp/secrets/.env`
    - Purpose: Sensitive credentials
    - Priority: Highest (overrides all)
 
@@ -172,123 +143,32 @@ The system uses a hierarchical configuration system:
    - Purpose: Personal content
    - Persistence: Long-term
 
-3. **Application Layer**
-   - Location: `configs/*.yaml`
-   - Purpose: Application settings
+3. **User Config Layer**
+   - Location: `~/.config/jobapp/config/*.yaml`
+   - Purpose: User-specific application settings
    - Scope: Component-specific
 
-4. **Default Layer**
+4. **Project Config Layer**
+   - Location: `configs/*.yaml`
+   - Purpose: Project-level settings
+   - Scope: Fallback if user config is missing
+
+5. **Default Layer**
    - Location: Embedded in code
    - Purpose: Fallback values
    - Priority: Lowest
 
-## Error Handling
+## Error Handling, Performance, Security, and Testing
 
-The application implements a comprehensive error handling strategy:
-
-1. **Recoverable Errors**
-   - Network timeouts
-   - Rate limiting
-   - Temporary auth failures
-   - Implementation: Retry with backoff
-
-2. **User Errors**
-   - Invalid configuration
-   - Missing credentials
-   - Implementation: Clear error messages
-
-3. **System Errors**
-   - Browser crashes
-   - PDF compilation failures
-   - Implementation: Graceful degradation
-
-4. **Data Errors**
-   - Invalid resume format
-   - Corrupt sheets data
-   - Implementation: Validation and repair
-
-## Performance Considerations
-
-1. **Browser Automation**
-   - Connection pooling
-   - Resource cleanup
-   - Memory management
-   - Session persistence
-
-2. **AI Operations**
-   - Prompt optimization
-   - Token management
-   - Parallel processing
-   - Result caching
-
-3. **Batch Processing**
-   - Progress tracking
-   - Checkpoint saving
-   - Error recovery
-   - Resource limits
-
-## Security Architecture
-
-1. **Credential Management**
-   - Secure storage location
-   - Environment isolation
-   - Access validation
-   - Key rotation support
-
-2. **Session Management**
-   - Secure storage
-   - Automatic renewal
-   - Validation checks
-   - Cleanup procedures
-
-3. **Data Protection**
-   - Local file security
-   - Transport encryption
-   - API key handling
-   - Output sanitization
-
-## Testing Architecture
-
-1. **Unit Tests**
-   - Component isolation
-   - Mock integrations
-   - Error scenarios
-   - Edge cases
-
-2. **Integration Tests**
-   - Component interaction
-   - Real API calls
-   - Browser automation
-   - PDF generation
-
-3. **System Tests**
-   - End-to-end workflows
-   - Performance metrics
-   - Resource usage
-   - Error recovery
+- Error handling, performance, security, and testing strategies are implemented as described, but details may be distributed across multiple files.
+- See [config_manager.py](../jobapp/core/config_manager.py), [llm_interface.py](../jobapp/core/llm_interface.py), [api_key_manager.py](../jobapp/core/api_key_manager.py), and [logger.py](../jobapp/core/logger.py) for implementation details.
 
 ## Development Guidelines
 
-1. **Code Organization**
-   - Modular design
-   - Clear separation
-   - Consistent structure
-   - Documentation
+- Code is organized modularly, with clear separation of concerns.
+- Configuration, error handling, and logging follow best practices and are centralized in core modules.
+- Testing and validation are ongoing; see the `tests/` directory (if present) and docstrings in each module for usage examples.
 
-2. **Error Handling**
-   - Comprehensive coverage
-   - Clear messages
-   - Recovery paths
-   - Logging
+---
 
-3. **Configuration**
-   - Schema validation
-   - Default values
-   - Override handling
-   - Documentation
-
-4. **Testing**
-   - Coverage targets
-   - Mock guidelines
-   - Scenario coverage
-   - Performance benchmarks 
+**For further details, see the source files linked above.** 
