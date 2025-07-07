@@ -70,12 +70,25 @@ async def main():
     match_score_parser = subparsers.add_parser("match-score", help="Calculate match scores for jobs in Google Sheets using LLM")
     # (No additional arguments for now)
 
+    # --- Login Subcommand ---
+    login_parser = subparsers.add_parser("login", help="Manually log in to LinkedIn using Playwright and save session state for scraping.")
+    # No additional arguments
+
     # Parse args
     args = parser.parse_args()
 
     if args.command == "match-score":
         # Run the match score calculator (async entrypoint)
         await match_score_calculator.main()
+        return
+
+    if args.command == "login":
+        try:
+            from jobapp.search import manual_login_playwright
+        except ImportError:
+            print("[ERROR] Playwright is not installed. Please install it with 'pip install playwright' and try again.")
+            sys.exit(1)
+        await manual_login_playwright.manual_linkedin_login()
         return
 
     # Default to job search if no subcommand or 'search' is given
