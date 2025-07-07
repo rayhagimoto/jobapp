@@ -46,22 +46,6 @@ KEYWORDS:
 ⦁   'finance'
 ⦁   'operations'
 ⦁   'predictive models'
-⦁   'price elasticity'
-⦁   'demand forecasting'
-⦁   'customer segmentation'
-⦁   'A/B testing'
-⦁   'pricing optimization'
-⦁   'data-driven insights'
-⦁   'python'
-⦁   'scikit-learn'
-⦁   'XGBoost'
-⦁   'SQL'
-⦁   'data manipulation'
-⦁   'large datasets'
-⦁   'revenue management'
-⦁   'AWS'
-⦁   'Azure'
-⦁   'GCP'
 ```
 
 #### Example Output Folder Structure
