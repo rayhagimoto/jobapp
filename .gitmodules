@@ -1,0 +1,4 @@
+[submodule "jobapp/resume_writer/resume_template"]
+	path = jobapp/resume_writer/resume_template
+	url = https://github.com/rayhagimoto/resume.git
+	branch = main
