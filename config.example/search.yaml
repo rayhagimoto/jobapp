@@ -1,0 +1,19 @@
+settings:
+  linkedin:
+    max_pages: 2
+    filters:
+      excluded_companies:
+        - "Example Company 1"
+        - "Example Company 2"
+
+models:
+  match_score:
+    provider: openrouter
+    model: deepseek/deepseek-chat-v3-0324:free
+    key: YOUR_OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+
+paths:
+  cache:
+    linkedin_jobs: "${DATA_DIR}/cache/linkedin_jobs.json"
+    search_results: "${DATA_DIR}/cache/search_results.json" 

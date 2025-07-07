@@ -1,0 +1,22 @@
+settings:
+  environment: "development"
+
+models:
+  default:
+    provider: google_genai
+    model: gemini-2.0-flash
+    key: YOUR_GOOGLE_API_KEY # config manager will do os.environ.get('YOUR_GOOGLE_API_KEY')
+  fallback:
+    provider: google_genai
+    model: gemini-2.0-flash
+    key: YOUR_GOOGLE_API_KEY
+
+paths:
+  user_data: "${DATA_DIR}/user"
+  auth:
+    linkedin_auth: "${AUTH_DIR}/linkedin_auth.json"
+    gspread_creds: "${AUTH_DIR}/gspread_credentials.json"
+
+google_spreadsheet:
+  spreadsheet_id: "YOUR_SPREADSHEET_ID"
+  tab_name: "Sheet1" 
