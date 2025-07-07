@@ -34,6 +34,7 @@ logs/
 
 # === Build, Dist, and Python Artifacts ===
 __pycache__/
+**/__pycache/
 *.py[cod]
 *$py.class
 *.egg-info/
