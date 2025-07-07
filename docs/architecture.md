@@ -37,10 +37,6 @@ Responsible for automated job discovery, scraping, and match scoring.
   - Calculates match scores for jobs using LLMs
   - Used by the `match-score` CLI subcommand
 
-- **Note:**
-  - There is no `browser_agent.py` file; browser automation is handled within [linkedin_scraper.py](../jobapp/search/linkedin_scraper.py) and [jobapp/core/chrome_manager.py](../jobapp/core/chrome_manager.py).
-  - There is no `job_scorer.py`; match scoring is implemented in [match_score_calculator.py](../jobapp/search/match_score_calculator.py).
-
 ### 2. Resume Optimizer ([jobapp/resume_writer/](../jobapp/resume_writer/))
 
 Implements the AI pipeline for resume customization and batch optimization.
@@ -48,8 +44,14 @@ Implements the AI pipeline for resume customization and batch optimization.
 #### Key Components:
 
 - **[main.py](../jobapp/resume_writer/main.py)**
-  - CLI for resume optimization, batch/single job, and PDF compilation
-  - Argument parsing and orchestration
+  - CLI entrypoint for resume optimization, batch/single job, and PDF compilation
+  - Orchestrates workflows based on parsed arguments
+  - Delegates all argument parsing to [`parser.py`](../jobapp/resume_writer/parser.py)
+
+- **[parser.py](../jobapp/resume_writer/parser.py)**
+  - Implements all CLI argument parsing logic for the resume writer
+  - Defines subcommands, options, and validation
+  - Provides a single `parse_arguments()` function used by `main.py`
 
 - **[batch_optimizer.py](../jobapp/resume_writer/batch_optimizer.py)**
   - Batch processing logic for resume optimization
