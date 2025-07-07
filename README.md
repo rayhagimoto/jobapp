@@ -10,6 +10,8 @@ This repository contains a set of tools I built to help automate and streamline 
 - **Calculate a "MatchScore"** for each job using an LLM (Large Language Model) to estimate how relevant a job is to your background.
 
 ### 2. Automated Resume Tailoring
+- **Resume editing is the most time-consuming and janky part of this project.** It's still under heavy development, and the process is not fully streamlined yet.
+- I found that Google was giving away $300 worth of API credits, so I haven't really cared to optimize for token usage yet—but that's on the docket for future improvements.
 - **Query the Google Spreadsheet** to get job info for the highest MatchScore jobs.
 - **For each job, create a new output folder**:  
   `MatchScore_CompanyName_JobTitle_Location/`
@@ -68,6 +70,27 @@ MatchScore_CompanyName_JobTitle_Location/
 ├── keywords.md
 ├── YourName_CompanyName_JobTitle_Location.pdf
 ├── YourName_CompanyName_JobTitle_Location.yaml
+```
+
+## How I Organize My Optimized Resumes
+
+This is just my personal way of keeping things organized—it's not required, but it works well for me:
+
+- On my desktop, I have a folder called `optimized_resumes`.
+- Inside that, I create a new subfolder for each day I apply to jobs (e.g., `2024-06-10/`, `2024-06-11/`).
+- Each daily subfolder contains the output folders for each job I applied to that day, named like `MatchScore_CompanyName_JobTitle_Location/`.
+- This helps me keep track of which jobs I applied to on which day, but you can organize things however you like.
+
+Example:
+```
+optimized_resumes/
+├── 2024-06-10/
+│   ├── 88_SMU_PostdoctoralFellowInArtificialIntelligenceAndMachineLearning_DallasTX/
+│   ├── 88_Amazon_AmazonRoboticsDataScientistCoOp2025_WestboroughMA/
+│   └── ...
+├── 2024-06-11/
+│   ├── 85_Xometry_DataScientistII_LexingtonKY/
+│   └── ...
 ```
 
 ## Caveats & Manual Review
