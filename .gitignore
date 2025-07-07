@@ -1,4 +1,4 @@
-**/resume_writer.bak/*
+**/resume_writer.bak/
 
 # === Sensitive & Personal Data (DO NOT REMOVE) ===
 .env
@@ -19,8 +19,6 @@ configs/*.yaml
 logs/
 *.pdf
 *.yaml
-!configs/*.template.yaml
-!contents/*.yaml
 
 # === Notebooks and Checkpoints ===
 *.ipynb
