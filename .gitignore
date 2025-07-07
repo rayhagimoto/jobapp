@@ -1,0 +1,84 @@
+**/resume_writer.bak/*
+
+# === Sensitive & Personal Data (DO NOT REMOVE) ===
+.env
+.env/*
+.auth/
+gspread_credentials.json
+configs/user/
+configs/*.yaml
+!configs/*.template.yaml
+.cursor/
+.cursor/mcp.json
+.cursorrules 
+.github
+
+# === Output, Logs, and Generated Files ===
+/output/
+*.log
+logs/
+*.pdf
+*.yaml
+!configs/*.template.yaml
+!contents/*.yaml
+
+# === Notebooks and Checkpoints ===
+*.ipynb
+.ipynb_checkpoints/
+/notebooks/
+
+# === Scripts and Tests (block all, allowlist specific if needed) ===
+/scripts/
+/tests/
+!/tests/manual_playwright_login.py
+
+# === Build, Dist, and Python Artifacts ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.pyo
+*.pyd
+*.pdb
+*.so
+.dSYM/
+build/
+dist/
+
+# === Virtual Environments ===
+.venv/
+env/
+venv/
+
+# === Node/Taskmaster/Editor/System Files ===
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+.taskmaster/
+
+# === Secrets, Keys, Credentials, Tokens, Certificates ===
+*secret*
+*key*
+*token*
+*credential*
+*.pem
+*.crt
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# === HTML and Miscellaneous ===
+*.html
+
+# === App-specific folders (if any) ===
+# (add more as needed)
+
+# === Review before public release ===
+# Double-check for any files with personal data, credentials, or job application content before pushing to a public repo. 
