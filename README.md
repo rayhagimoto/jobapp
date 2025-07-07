@@ -21,6 +21,7 @@ This repository contains a set of tools I built to help automate and streamline 
   - The YAML version of the resume
   - A `keywords.md` file with LLM-identified keywords
 - **Sorting by MatchScore** is easy—just sort the folders locally.
+- See [docs/ai_optimization.md](docs/ai_optimization.md) for more details.
 
 ### 3. Resume Compilation
 - Uses my [resume compilation script](https://github.com/rayhagimoto/resume) (`compile_resume.py`) to turn YAML content into a professional PDF resume.
