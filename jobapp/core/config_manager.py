@@ -17,7 +17,7 @@ class ConfigManager:
     - Merges default, module, and CLI/constructor overrides into a single config.
     - Exposes helpers for model config, user name, and section path resolution for pipelines.
     """
-    def __init__(self, env_path=None):
+    def __init__(self, env_path=None, module=None):
         # Default to secrets directory if no path specified
         if env_path is None:
             secrets_dir = Path(user_config_dir("jobapp")) / "secrets"
@@ -27,8 +27,11 @@ class ConfigManager:
         self.env = os.environ
         self._yaml_configs = {}
         
-        # Detect module from caller's file path
-        self.module = self._detect_module()
+        # Allow manual override of module
+        if module is not None:
+            self.module = module
+        else:
+            self.module = self._detect_module()
         
         # Load default config first
         self.default_config = self.get_yaml_config('default', default={})
@@ -256,3 +259,9 @@ class ConfigManager:
         # Always return a list
         print(f"[DEBUG] ConfigManager.get_section_paths: {section_paths}")
         return section_paths
+
+    def __getattr__(self, name):
+        # Only called if attribute not found the usual way
+        if 'merged_config' in self.__dict__ and name in self.merged_config:
+            return self.merged_config[name]
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
