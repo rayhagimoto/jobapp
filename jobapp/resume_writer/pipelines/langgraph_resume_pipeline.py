@@ -506,11 +506,7 @@ class ResumeOptimizationPipeline:
         self.section_paths = config.get_section_paths()
         
         # Max retries: prefer module config, then default config, then fallback
-        self.max_retries = (
-            config.module_config.get('settings', {}).get('validation', {}).get('max_retries')
-            or config.default_config.get('settings', {}).get('validation', {}).get('max_retries')
-            or 5
-        )
+        self.max_retries = config.get('settings', {}).get('validation', {}).get('max_retries', 5)
         self._build_graph()
 
     def _build_graph(self):
