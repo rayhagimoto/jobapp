@@ -55,7 +55,8 @@ async def process_single_job(
     output_dir: Path,
     overwrite: bool = False,
     compile_pdf: bool = True,
-    your_name: str = None
+    your_name: str = None,
+    OptimizationPipeline = ResumeOptimizationPipeline,
 ) -> Dict[str, Any]:
     """
     Processes a single job dict (from spreadsheet or manual input).
@@ -114,7 +115,6 @@ async def process_single_job(
             'edited_resume': copy.deepcopy(input_resume),
             'job_description': job_description,
             'experiences': experiences,
-            'section_paths': section_paths,
             'intermediates': {},
             'chats': {},
             'config': config.module_config,
@@ -122,7 +122,7 @@ async def process_single_job(
 
         # Run the pipeline
         llm = LLMInterface()
-        pipeline = ResumeOptimizationPipeline(config, job_logger, llm)
+        pipeline = OptimizationPipeline(config, job_logger, llm)
         pipeline_output = pipeline.invoke(context)
 
         # Save outputs
