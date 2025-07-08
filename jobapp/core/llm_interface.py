@@ -71,7 +71,7 @@ class LLMInterface(Runnable):
             os.environ['OPENAI_API_KEY'] = openrouter_api_key
             os.environ['OPENAI_API_BASE'] = openrouter_base_url
 
-    def _get_llm(self, task_name: str = None, provider: str = None, model: str = None, is_fallback: bool = False, api_key_env: str = None):
+    def _get_llm(self, task_name: str = None, provider: str = None, model: str = None, is_fallback: bool = False, api_key_env: str = None, **kwargs):
         """
         Get the appropriate LLM using the modern init_chat_model API.
         """
@@ -153,8 +153,14 @@ class LLMInterface(Runnable):
         # Add info logging for which LLM is being loaded
         # self.logger.info(f"[LLMInterface] Loading model for task '{task_name}': provider={actual_provider}, model={actual_model}, key={model_config.get('key')}, base_url={model_config.get('base_url')}")
         try:
-            # Add temperature and timeout configuration
-            return init_chat_model(model_identifier, temperature=0.3)
+            # Pass through kwargs to init_chat_model, with temperature as default
+            model_kwargs = {'temperature': 0.3}
+            if actual_provider == 'google_genai':
+                model_kwargs['thinking_budget'] = 0
+                self.logger.debug(f"Added thinking_budget=0 for Google Gemini model: {actual_model}")
+            model_kwargs.update(kwargs)
+            self.logger.debug(f"Final model_kwargs for {model_identifier}: {model_kwargs}")
+            return init_chat_model(model_identifier, **model_kwargs)
         except Exception as e:
             raise ValueError(f"Failed to initialize model '{model_identifier}': {e}")
         finally:
@@ -168,7 +174,7 @@ class LLMInterface(Runnable):
                 # Remove the base URL we set if there was no original
                 del os.environ['OPENAI_API_BASE']
 
-    def _handle_llm_call_with_key_management(self, llm_call_func, task_name: str = None, provider: str = None, model: str = None, is_fallback: bool = False, max_retries: int = 3, retry_delay: float = 1.0):
+    def _handle_llm_call_with_key_management(self, llm_call_func, task_name: str = None, provider: str = None, model: str = None, is_fallback: bool = False, max_retries: int = 3, retry_delay: float = 1.0, **kwargs):
         """
         Handle LLM calls with smart API key management, quota tracking, and appropriate retry logic.
         
@@ -213,13 +219,14 @@ class LLMInterface(Runnable):
                 # --- ADDED LOGGING ---
                 self.logger.debug(f"Attempting to initialize model with task '{task_name}', fallback: {is_fallback}, key_env: '{current_key_env}'")
                 
-                # Create LLM with current key
+                # Create LLM with current key and pass through kwargs
                 llm = self._get_llm(
                     task_name=task_name if not (provider or model) else None,
                     provider=provider if not is_fallback else None,
                     model=model if not is_fallback else None,
                     is_fallback=is_fallback,
-                    api_key_env=current_key_env
+                    api_key_env=current_key_env,
+                    **kwargs
                 )
                 
                 # Make the actual LLM call
@@ -283,14 +290,14 @@ class LLMInterface(Runnable):
         # Try primary model with key management
         try:
             return self._handle_llm_call_with_key_management(
-                llm_call, task_name, provider, model, is_fallback=False, max_retries=max_retries, retry_delay=retry_delay
+                llm_call, task_name, provider, model, is_fallback=False, max_retries=max_retries, retry_delay=retry_delay, **kwargs
             )
         except Exception as e:
             if fallback:
                 print(f"[WARNING] Primary model failed ({e}), attempting fallback...")
                 try:
                     return self._handle_llm_call_with_key_management(
-                        llm_call, task_name, None, None, is_fallback=True, max_retries=max_retries, retry_delay=retry_delay
+                        llm_call, task_name, None, None, is_fallback=True, max_retries=max_retries, retry_delay=retry_delay, **kwargs
                     )
                 except Exception as fallback_error:
                     print(f"[ERROR] Fallback model also failed: {fallback_error}")
