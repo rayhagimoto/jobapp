@@ -155,7 +155,11 @@ class LLMInterface(Runnable):
         try:
             # Pass through kwargs to init_chat_model, with temperature as default
             model_kwargs = {'temperature': 0.3}
-            if actual_provider == 'google_genai':
+            # Only add thinking_budget=0 for Gemini 2.5 models (flash/pro), not for older models
+            # Older models (2.0 flash, 1.5) do not support this argument and do not use 'thinking' anyway
+            if actual_provider == 'google_genai' and (
+                actual_model.startswith('gemini-2.5-flash') or actual_model.startswith('gemini-2.5-pro')
+            ):
                 model_kwargs['thinking_budget'] = 0
                 self.logger.debug(f"Added thinking_budget=0 for Google Gemini model: {actual_model}")
             model_kwargs.update(kwargs)
