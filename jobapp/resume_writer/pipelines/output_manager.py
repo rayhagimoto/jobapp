@@ -11,7 +11,7 @@ import yaml
 class ResumeOutputManager:
     def __init__(self, base_output_dir: Path = Path("."), config_manager: ConfigManager = None):
         self.base_output_dir = Path(base_output_dir)
-        self.config_manager = config_manager
+        self.config_manager = config_manager or ConfigManager()
         self.logger = logging.getLogger(__name__)
 
     def save_formatted_resume_yaml(self, path: Path, formatted_resume: dict):
@@ -72,12 +72,13 @@ class ResumeOutputManager:
             "changelog": job_dir / "changelog.md",
         }
         written = {}
+        cache_dir = self.config_manager.get_cache_path()
         if output_format == "yaml_only":
             self._write_yaml(paths["edited_resume_yaml"], edited_resume)
             written["edited_resume_yaml"] = paths["edited_resume_yaml"]
             # PDF (optional)
             if compile_pdf:
-                success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"])
+                success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"], build_dir=cache_dir)
                 if success:
                     self.logger.info(f"PDF compiled: {paths['edited_resume_pdf']}")
                     written["edited_resume_pdf"] = paths["edited_resume_pdf"]
@@ -96,7 +97,7 @@ class ResumeOutputManager:
             written["changelog"] = paths["changelog"]
             # PDF (optional)
             if compile_pdf:
-                success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"])
+                success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"], build_dir=cache_dir)
                 if success:
                     self.logger.info(f"PDF compiled: {paths['edited_resume_pdf']}")
                     written["edited_resume_pdf"] = paths["edited_resume_pdf"]
@@ -138,7 +139,7 @@ class ResumeOutputManager:
         written = paths.copy()
         # PDF (optional)
         if compile_pdf:
-            success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"])
+            success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"], build_dir=cache_dir)
             if success:
                 self.logger.info(f"PDF compiled: {paths['edited_resume_pdf']}")
             else:
