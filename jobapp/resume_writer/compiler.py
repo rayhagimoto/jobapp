@@ -66,7 +66,7 @@ class ResumeCompiler:
                 cmd.append("-b")
                 cmd.append(str(build_dir))
 
-            logger.info(f"Executing resume compiler: {' '.join(cmd)}")
+            # logger.debug(f"Executing resume compiler: {' '.join(cmd)}")
             
             result = subprocess.run(
                 cmd,
@@ -74,14 +74,17 @@ class ResumeCompiler:
                 text=True,
                 check=False
             )
-            
+
+            if result.stdout:
+                logger.debug(f"Compiler STDOUT: {result.stdout.strip()}")
+
             if result.returncode != 0:
                 logger.error(f"PDF compilation script failed for {content_file}.")
                 logger.error(f"Compiler STDOUT: {result.stdout.strip()}")
                 logger.error(f"Compiler STDERR: {result.stderr.strip()}")
                 return False
             
-            logger.info(f"Successfully compiled {content_file} to {output_path}")
+            logger.info(f"Successfully compiled {content_file.name} to {output_path.name}")
             return True
 
         except Exception as e:
