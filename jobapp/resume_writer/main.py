@@ -37,7 +37,9 @@ async def main():
         if args.content is None:
             args.content = str(resume_template_dir / "contents" / "resume.yaml")
         if args.output is None:
-            args.output = str(resume_template_dir / "build" / "resume.pdf")
+            # Default: output PDF in same location as content YAML, with .pdf extension
+            content_path = Path(args.content)
+            args.output = str(content_path.with_suffix('.pdf'))
         compile_script = resume_template_dir / "compile_resume.py"
         cmd = [
             sys.executable,
