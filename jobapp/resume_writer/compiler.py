@@ -26,7 +26,7 @@ class ResumeCompiler:
             Path(__file__).parent / "resume_template" / "compile_resume.py"
         ).resolve()
 
-    def compile(self, content_file: Union[str, Path], output_path: Optional[Union[str, Path]] = None) -> bool:
+    def compile(self, content_file: Union[str, Path], output_path: Optional[Union[str, Path]] = None, build_dir: Optional[Union[str, Path]] = None) -> bool:
         """
         Compile a YAML resume to PDF by calling the compiler script.
         
@@ -58,9 +58,14 @@ class ResumeCompiler:
                 "python3", 
                 str(self.compiler_script_path),
                 "--content", str(content_file),
-                "--output", str(output_path)
+                "--output", str(output_path),
             ]
-            
+
+            if build_dir:
+                build_dir = Path(build_dir).resolve()
+                cmd.append("-b")
+                cmd.append(str(build_dir))
+
             logger.info(f"Executing resume compiler: {' '.join(cmd)}")
             
             result = subprocess.run(
@@ -86,13 +91,14 @@ class ResumeCompiler:
 def compile_resume(
     content_file: Union[str, Path],
     output_path: Optional[Union[str, Path]] = None,
+    build_dir: Optional[Union[str, Path]] = None
 ) -> bool:
     """
     Compiles a resume YAML to PDF.
     This is a convenience wrapper around the ResumeCompiler class.
     """
     compiler = ResumeCompiler()
-    return compiler.compile(content_file, output_path)
+    return compiler.compile(content_file, output_path, build_dir)
 
 async def compile_pdfs(paths: List[tuple[Path, Path]]):
     """
