@@ -5,30 +5,11 @@ from langchain_core.runnables.base import Runnable
 from typing import Any, Dict, List, Optional
 from langchain_core.runnables import Runnable
 from langchain_core.messages import BaseMessage
+import logging
 
-class LangChainLLMAdapter(Runnable):
-    """
-    Adapter to wrap a custom LLMInterface and make it compatible with LangChain's Runnable interface.
-    """
-    def __init__(self, llm_interface):
-        self.llm_interface = llm_interface
+# Module-level logger for fallback
+module_logger = logging.getLogger(__name__)
 
-    def invoke(self, input, config=None, **kwargs):
-        # If input is a dict, try to extract a prompt
-        if isinstance(input, dict):
-            if "prompt" in input:
-                prompt = input["prompt"]
-            else:
-                prompt = " ".join(str(v) for v in input.values() if isinstance(v, str))
-        # If input is a LangChain ChatPromptValue or similar, try to get the string
-        elif hasattr(input, "to_string"):
-            prompt = input.to_string()
-        elif hasattr(input, "messages"):
-            # Try to join all message contents
-            prompt = " ".join(getattr(m, "content", str(m)) for m in input.messages)
-        else:
-            prompt = str(input)
-        return self.llm_interface.send_prompt(prompt)
 
 class PipelineContextParseError(Exception):
     """
@@ -67,8 +48,8 @@ class ChatNode:
         else:
             self.memory = memory
 
-    @staticmethod
     def _send_prompt(
+        self,
         llm: Runnable,
         memory: ConversationBufferMemory,
         prompt: ChatPromptTemplate,
@@ -103,9 +84,16 @@ class ChatNode:
         # else: do not add chat_history to msg_context
 
         # 2. Run the prompt
-        chain = prompt | llm
-        result = chain.invoke(msg_context)
-        output = result.content if hasattr(result, "content") else result
+        try:
+            chain = prompt | llm
+            self.logger.debug(f"About to call chain.invoke with msg_context={msg_context}")
+            result = chain.invoke(msg_context)
+            self.logger.debug(f"chain.invoke returned: {result}")
+            output = result.content if hasattr(result, "content") else result
+            self.logger.debug(f"output assigned: {output}")
+        except Exception as e:
+            self.logger.error(f"[ChatNode] Error during prompt execution: {e}")
+            raise
 
         # 3. Optionally update memory/context
         if update_memory and use_memory and memory is not None:
@@ -126,9 +114,9 @@ class ChatNode:
 
         # 4. Return the output
         return output
-    
 
     def send_prompt(self, prompt_key : str, context : dict, msg_context : dict):
+        self.logger.debug(f"ChatNode.send_prompt called with prompt_key={prompt_key}, context={context}, msg_context={msg_context}")
         # Ensure chat_history is present if required by the prompt
         prompt = self.prompts[prompt_key]
         if (
@@ -157,3 +145,4 @@ class ChatNode:
         # Store the actual prompt string for transcript readability
         context['intermediates'][f'{prompt_key}_inputs'] = filled_prompt
         context['intermediates'][f'{prompt_key}_output'] = response
+        return response

@@ -10,8 +10,7 @@ from ..core.config_manager import ConfigManager
 from ..core.logger import get_logger
 from ..utils.filename import get_resume_filenames
 from ..utils.fuzzy_find import fuzzy_find_job
-from jobapp.resume_writer.pipelines.output_manager import ResumeOutputManager
-from jobapp.resume_writer.pipelines.langgraph_resume_pipeline import ResumeOptimizationPipeline
+from jobapp.resume_writer.pipelines import ResumePipeline, OutputManager
 from jobapp.core.llm_interface import LLMInterface
 from .compiler import compile_pdfs
 
@@ -33,11 +32,11 @@ def _get_name_from_resume(resume_path: Path) -> str:
         logger.warning(f"Failed to extract name from resume file {resume_path}: {e}. Using fallback 'DefaultName'.")
         return "DefaultName"
 
-async def get_job_by_query(query: str) -> Optional[Dict[str, Any]]:
+async def get_job_by_query(query: str, config=None) -> Optional[Dict[str, Any]]:
     """Fetches jobs from sheets and fuzzy finds one based on a query."""
     logger = get_logger(__name__)
     try:
-        sheets_manager = SheetsManager()
+        sheets_manager = SheetsManager(config=config)
         jobs = sheets_manager.get_all_records()
         job = fuzzy_find_job(jobs, query)
         if not job:
@@ -56,13 +55,17 @@ async def process_single_job(
     overwrite: bool = False,
     compile_pdf: bool = True,
     your_name: str = None,
-    OptimizationPipeline = ResumeOptimizationPipeline,
+    OptimizationPipeline = ResumePipeline,  # Default to new pipeline
+    config=None,
 ) -> Dict[str, Any]:
     """
     Processes a single job dict (from spreadsheet or manual input).
     This is the core, reusable logic for resume optimization.
+    Now fully async: all blocking operations are run in threads.
     """
     logger = get_logger(__name__)
+    import time
+    start_time = time.time()
     try:
         job_title = job_info.get("JobTitle", "Unknown Job")
         company = job_info.get("Company", "Unknown Company")
@@ -75,15 +78,12 @@ async def process_single_job(
                 "'your_name' must be provided to process_single_job. This should come from ConfigManager.get_user_name()."
             )
 
-        # Load input resume and experiences
+        # Load input resume and experiences (blocking I/O)
         import yaml
-        with open(input_resume_path, 'r', encoding='utf-8') as f:
-            input_resume = yaml.safe_load(f)
-        with open(experiences_path, 'r', encoding='utf-8') as f:
-            experiences = f.read()
+        input_resume = await asyncio.to_thread(lambda: yaml.safe_load(open(input_resume_path, 'r', encoding='utf-8')))
+        experiences = await asyncio.to_thread(lambda: open(experiences_path, 'r', encoding='utf-8').read())
 
-        config = ConfigManager()
-        section_paths = config.get_section_paths()
+        section_paths = config.get_section_paths() if config else []
 
         # Set up job-specific logger
         import re
@@ -102,56 +102,50 @@ async def process_single_job(
         log_file_path = job_specific_output_dir / 'job.log'
         job_logger = get_logger(name=job_log_name, log_file=log_file_path)
 
-        job_logger.info(f"Processing job: '{job_title}' at '{company}'.")
+        job_logger.info(f"[START] Processing job: '{job_title}' at '{company}' (started at {time.strftime('%X')})")
         job_logger.info(f"-> Output will be in: {job_specific_output_dir}")
-        job_logger.info(f"Job info: {job_info}")
         job_logger.info(f"Input resume path: {input_resume_path}")
         job_logger.info(f"Experiences path: {experiences_path}")
         job_logger.info(f"Section paths: {section_paths}")
 
-        # Build pipeline context
-        context = {
-            'input_resume': input_resume,
-            'edited_resume': copy.deepcopy(input_resume),
-            'job_description': job_description,
-            'experiences': experiences,
-            'intermediates': {},
-            'chats': {},
-            'config': config.module_config,
-        }
-
-        # Run the pipeline
-        llm = LLMInterface()
-        pipeline = OptimizationPipeline(config, job_logger, llm)
-        pipeline_output = pipeline.invoke(context)
-
-        # Save outputs
-        output_manager = ResumeOutputManager(output_dir, config_manager=config)
-        written = output_manager.save_all_outputs(
-            pipeline_output=pipeline_output,
-            job_info={
-                "name": your_name,
-                "job_title": job_title,
-                "company": company,
-                "location": location,
-                "match_score": match_score,
-            },
-            output_format="full",
-            compile_pdf=compile_pdf
+        # Run the pipeline (blocking, so run in thread)
+        llm = LLMInterface(config=config)
+        pipeline = OptimizationPipeline(config, llm, job_logger)
+        pipeline_output = await asyncio.to_thread(
+            lambda: pipeline.invoke(
+                input_resume=input_resume,
+                job_description=job_description,
+                experiences=experiences
+            )
         )
 
-        yaml_path = written.get("edited_resume_yaml")
-        pdf_path = written.get("edited_resume_pdf")
+        # Save outputs (blocking, so run in thread)
+        output_manager = OutputManager(job_logger, config=config)
+        written = await asyncio.to_thread(
+            lambda: output_manager.write_all_outputs(
+                context=pipeline_output,
+                job_info=job_info,
+                your_name=your_name,
+                base_output_dir=output_dir,
+                compile_pdf=compile_pdf
+            )
+        )
 
-        if not yaml_path:
+        yaml_path = written.get('edited_resume_yaml')
+        pdf_path = written.get('edited_resume_pdf')
+
+        if not yaml_path or not Path(yaml_path).exists():
             job_logger.error("Optimization failed, no resume was generated.")
             return {"success": False, "skipped": False, "reason": "Optimization returned no content."}
+
+        end_time = time.time()
+        job_logger.info(f"[END] Finished job: '{job_title}' at '{company}' (ended at {time.strftime('%X')}, duration: {end_time - start_time:.2f}s)")
 
         return {
             "success": True,
             "skipped": False,
-            "output_dir": str(job_specific_output_dir),
-            "pdf_path": str(pdf_path) if pdf_path else None,
+            "output_dir": str(yaml_path.parent),
+            "pdf_path": str(pdf_path) if pdf_path and Path(pdf_path).exists() else None,
             "yaml_path": str(yaml_path)
         }
     except FileExistsError:
@@ -169,7 +163,8 @@ async def run_batch_optimization(
     max_resumes: int = None,
     overwrite: bool = False,
     compile_pdf: bool = True,
-    your_name: str = None
+    your_name: str = None,
+    config=None
 ):
     """
     Runs the entire batch optimization process.
@@ -188,7 +183,7 @@ async def run_batch_optimization(
 
     # Step 1: Fetch and filter data from Google Sheets
     try:
-        sheets_manager = SheetsManager()
+        sheets_manager = SheetsManager(config=config)
         df = sheets_manager.get_dataframe()
     except Exception as e:
         logger.error(f"Failed to fetch or process data from Google Sheets: {e}")
@@ -216,7 +211,6 @@ async def run_batch_optimization(
 
     filtered_df.sort_values(by="MatchScore", ascending=False, inplace=True)
     
-    config = ConfigManager()
     if max_resumes is None:
         resume_writer_config = config.get_yaml_config('resume_writer', default={})
         batch_settings = resume_writer_config.get("settings", {}).get("batch", {})
@@ -262,7 +256,8 @@ async def run_batch_optimization(
             output_dir=output_dir,
             overwrite=overwrite,
             compile_pdf=compile_pdf,
-            your_name=your_name
+            your_name=your_name,
+            config=config
         ))
         dispatched += 1
     if not tasks:
@@ -277,9 +272,18 @@ async def run_batch_optimization(
             if r.get("success") and not r.get("skipped") and r.get("yaml_path")
         ]
         if successful_optimizations:
-            await compile_pdfs([
-                (Path(r['yaml_path']), Path(r['pdf_path'])) for r in successful_optimizations
-            ])
+            # Get cache_dir from config
+            cache_dir = config.get_cache_path() if config else './build'
+            cache_dir = Path(cache_dir)
+            pdf_jobs = []
+            for r in successful_optimizations:
+                yaml_path = Path(r['yaml_path'])
+                pdf_path = Path(r['pdf_path'])
+                # Reconstruct job_dir from yaml_path's parent
+                job_dir = yaml_path.parent
+                build_dir = cache_dir / job_dir.name
+                pdf_jobs.append((yaml_path, pdf_path, build_dir))
+            await compile_pdfs(pdf_jobs)
         else:
             logger.info("No successful optimizations to compile PDF for.")
 

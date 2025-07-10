@@ -209,6 +209,20 @@ def _add_single_subparser_args(subparsers: argparse._SubParsersAction, common_pa
     single_parser.set_defaults(no_compile_pdf=False)
 
 
+def _add_cache_subparser_args(subparsers: argparse._SubParsersAction):
+    """Adds the 'cache' subparser and its 'clean' subcommand."""
+    cache_parser = subparsers.add_parser(
+        "cache",
+        help="Cache management commands."
+    )
+    cache_subparsers = cache_parser.add_subparsers(dest="action", required=True)
+    clean_parser = cache_subparsers.add_parser(
+        "clean",
+        help="Clean up all files in the cache directory."
+    )
+    clean_parser.set_defaults(mode="cache", action="clean")
+
+
 def parse_arguments():
     """
     Parses all command-line arguments for the resume_writer module.
@@ -227,6 +241,7 @@ def parse_arguments():
     _add_optimize_job_subparser_args(subparsers, common_parent_parser)
     _add_process_subparser_args(subparsers)
     _add_single_subparser_args(subparsers, common_parent_parser)
+    _add_cache_subparser_args(subparsers)
 
     args = parser.parse_args()
 
