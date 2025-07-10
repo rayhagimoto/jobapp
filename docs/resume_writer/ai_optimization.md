@@ -1,4 +1,50 @@
-# AI Resume Optimization Pipeline (Accurate Developer Documentation)
+# AI Resume Optimization Pipeline (Current Implementation)
+
+> **Note:** The original full pipeline (with validation and feedback loops) was too slow for practical use. After experimentation, I decided to simplify the process: the script now only updates the `profile` and `skills` sections of the resume. These are the only areas I feel comfortable letting the AI edit automatically. All other sections remain untouched, and the more complex pipeline is now deprecated (see end of this document for legacy details).
+
+---
+
+## Overview
+
+The current resume optimization script takes a base resume YAML and a job description, and uses an LLM to update only the following fields:
+- `profile.description`: The summary/about section at the top of the resume.
+- `skills`: The list of skills, tailored to the job description.
+
+All other fields and sections are left unchanged. There is no longer a multi-phase pipeline, validation loop, or batch processing. The focus is on fast, safe, and targeted updates.
+
+---
+
+## Usage
+
+**Optimize Profile and Skills:**
+```bash
+python -m jobapp.resume_writer.main optimize-profile-skills --input-resume configs/resume.yaml --job-description-file job.txt --output path/to/optimized_resume.yaml
+```
+
+**Arguments:**
+- `--input-resume`: Path to the base resume YAML.
+- `--job-description-file`: Path to a job description text file.
+- `--output`: Path for the updated YAML output.
+
+---
+
+## Rationale
+
+- The full pipeline (with planning, validation, and feedback) was too slow for real-world use.
+- Only the `profile` and `skills` sections are safe for automated editing; other sections require human review.
+- This approach is much faster and avoids the risk of the AI making inappropriate changes to work history or achievements.
+
+---
+
+# Legacy Pipeline (Deprecated)
+
+> The following describes the original, now-deprecated, multi-phase pipeline. This is retained for reference only.
+
+<details>
+<summary>Show legacy pipeline details</summary>
+
+
+# LEGACY: AI Resume Optimization Pipeline (Original Implementation)
 
 This document describes the actual implementation of the AI-powered resume optimization pipeline in JobApp, as found in:
 - [jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py](../jobapp/resume_writer/pipelines/langgraph_resume_pipeline.py)
