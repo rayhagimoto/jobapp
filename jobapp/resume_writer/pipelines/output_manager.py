@@ -1,213 +1,149 @@
+"""
+OutputManager for writing resume pipeline outputs to disk.
+Handles YAML, job description, keywords, and PDF (stub) outputs.
+Follows legacy filename conventions and robust error handling.
+"""
+
 import os
-from pathlib import Path
-from jobapp.core.config_manager import ConfigManager
-from typing import Dict, Any, Optional
-from jobapp.resume_writer.yaml_processing_utils import format_yaml_with_quotes, extract_by_path_advanced, strip_yaml_code_block
-from jobapp.utils.filename import get_resume_filenames
-from jobapp.resume_writer.compiler import compile_resume
 import logging
-import yaml
+from pathlib import Path
+from jobapp.resume_writer.yaml_processing_utils import format_yaml_with_quotes
+from jobapp.utils.filename import get_resume_filenames
+from jobapp.resume_writer.compiler import ResumeCompiler
 
-class ResumeOutputManager:
-    def __init__(self, base_output_dir: Path = Path("."), config_manager: ConfigManager = None):
-        self.base_output_dir = Path(base_output_dir)
-        self.config_manager = config_manager or ConfigManager()
-        self.logger = logging.getLogger(__name__)
+class OutputManager:
+    def __init__(self, logger=None, config=None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.compiler = ResumeCompiler()
+        self.config = config
 
-    def save_formatted_resume_yaml(self, path: Path, formatted_resume: dict):
+    def write_resume_yaml(self, edited_resume: dict, yaml_path: Path) -> Path:
         """
-        Save the formatted_resume dict as a single-quoted YAML string using the new two-step approach:
-        - Serialize 'sections' with normal yaml.dump (no escaping)
-        - Serialize the rest with format_yaml_with_quotes (exclude_sections=True)
-        - Combine and write
-        Strictly enforces that formatted_resume is a dict.
+        Write the edited resume YAML to disk at the given path. Returns the file path.
         """
-        if not isinstance(formatted_resume, dict):
-            raise TypeError("formatted_resume must be a dict before formatting as YAML")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Separate out sections
-        sections = {'sections': formatted_resume['sections']} if 'sections' in formatted_resume else {}
-        rest = {k: v for k, v in formatted_resume.items() if k != 'sections'}
-        # Serialize
-        sections_yaml = yaml.dump(sections, default_flow_style=False, allow_unicode=True, sort_keys=False) if sections else ''
-        rest_yaml = format_yaml_with_quotes(rest, exclude_sections=True)
-        # Combine
-        yaml_str = sections_yaml.strip() + '\n' + rest_yaml.strip() if sections else rest_yaml.strip()
-        print(f"ResumeOutputManager: formatted resume = {formatted_resume}")
-        print(yaml_str)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(yaml_str)
+        resume_yaml_str = format_yaml_with_quotes(edited_resume)
+        yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                f.write(resume_yaml_str)
+            self.logger.info(f"[OutputManager] Edited resume YAML written to {yaml_path}")
+        except Exception as e:
+            self.logger.error(f"[OutputManager] Failed to write edited resume YAML: {e}")
+            raise
+        return yaml_path
 
-    def save_all_outputs(
-        self,
-        pipeline_output: dict,  # {"edited_resume": ..., "context": ..., "formatted_resume": ...}
-        job_info: dict,         # {"name": ..., "job_title": ..., "company": ..., "location": ..., "match_score": ...}
-        output_format: str = "full",
-        compile_pdf: bool = True
-    ) -> Dict[str, Path]:
+    def write_job_description(self, job_description: str, job_dir: Path) -> Path:
         """
-        Main entry point. Saves required outputs and returns a dict of file paths.
-        output_format:
-            - 'full': all outputs (default)
-            - 'concise': only yaml, keywords, changelog
-            - 'yaml_only': only yaml
-        compile_pdf:
-            - If True (default), compile PDF after writing YAML
-            - If False, skip PDF compilation (for --no-compile-pdf)
+        Write the job description to disk. Returns the file path.
         """
-        context = pipeline_output["context"]
-        edited_resume = pipeline_output["edited_resume"]
-        filenames = get_resume_filenames(
-            job_info["name"], job_info["job_title"], job_info["company"], job_info["location"], job_info.get("match_score")
-        )
-        job_dir = self.base_output_dir / filenames["dir"]
-        job_dir.mkdir(parents=True, exist_ok=True)
-        paths = {
-            "job_description": job_dir / "job_description.md",
-            "edited_resume_yaml": self.base_output_dir / filenames["yaml"],
-            "edited_resume_pdf": self.base_output_dir / filenames["pdf"],
-            "keywords": job_dir / "keywords.md",
-            "planning_transcript": job_dir / "planning_transcript.md",
-            "optimization_transcript": job_dir / "optimization_transcript.md",
-            "changelog": job_dir / "changelog.md",
-        }
-        written = {}
-        cache_dir = self.config_manager.get_cache_path()
-        if output_format == "yaml_only":
-            self._write_yaml(paths["edited_resume_yaml"], edited_resume)
-            written["edited_resume_yaml"] = paths["edited_resume_yaml"]
-            # PDF (optional)
-            if compile_pdf:
-                success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"], build_dir=cache_dir)
-                if success:
-                    self.logger.info(f"PDF compiled: {paths['edited_resume_pdf']}")
-                    written["edited_resume_pdf"] = paths["edited_resume_pdf"]
-                else:
-                    self.logger.error(f"PDF compilation failed for {paths['edited_resume_yaml']}")
-            return written
-        if output_format == "concise":
-            self._write_yaml(paths["edited_resume_yaml"], edited_resume)
-            keywords_raw = context.get("intermediates", {}).get("jd_analysis_output", "")
-            keywords_md = strip_yaml_code_block(keywords_raw)
-            self._write_text(paths["keywords"], keywords_md)
-            changelog_md = self._make_changelog(context)
-            self._write_text(paths["changelog"], changelog_md)
-            written["edited_resume_yaml"] = paths["edited_resume_yaml"]
-            written["keywords"] = paths["keywords"]
-            written["changelog"] = paths["changelog"]
-            # PDF (optional)
-            if compile_pdf:
-                success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"], build_dir=cache_dir)
-                if success:
-                    self.logger.info(f"PDF compiled: {paths['edited_resume_pdf']}")
-                    written["edited_resume_pdf"] = paths["edited_resume_pdf"]
-                else:
-                    self.logger.error(f"PDF compilation failed for {paths['edited_resume_yaml']}")
-            return written
-        # full (default): all outputs
-        self._write_text(paths["job_description"], context.get("job_description", ""))
-        # Use formatted_resume if available, else fallback to edited_resume
-        formatted_resume = pipeline_output.get("formatted_resume")
-        if formatted_resume is not None:
-            print("Saving formatted resume")
-            print(formatted_resume)
-            self._write_yaml(paths["edited_resume_yaml"], formatted_resume)
+        jd_path = job_dir / 'job_description.md'
+        try:
+            with open(jd_path, 'w', encoding='utf-8') as f:
+                f.write(job_description)
+            self.logger.info(f"[OutputManager] Job description written to {jd_path}")
+        except Exception as e:
+            self.logger.error(f"[OutputManager] Failed to write job description: {e}")
+            raise
+        return jd_path
+
+    def write_keywords_yaml(self, keywords_yaml: str, job_dir: Path) -> Path:
+        """
+        Write the keywords YAML to disk. Returns the file path.
+        """
+        keywords_path = job_dir / 'keywords.md'
+        try:
+            with open(keywords_path, 'w', encoding='utf-8') as f:
+                f.write(keywords_yaml)
+            self.logger.info(f"[OutputManager] Keywords YAML written to {keywords_path}")
+        except Exception as e:
+            self.logger.error(f"[OutputManager] Failed to write keywords YAML: {e}")
+            raise
+        return keywords_path
+
+    def compile_pdf(self, yaml_path: Path, pdf_path: Path, build_dir=None):
+        """
+        Compile the PDF using ResumeCompiler, passing build_dir if provided.
+        """
+        success = self.compiler.compile(content_file=yaml_path, output_path=pdf_path, build_dir=build_dir)
+        if success:
+            self.logger.info(f"[OutputManager] PDF compiled: {pdf_path}")
         else:
-            print("Saving edited_resume")
-            print(f"{edited_resume}")
-            self._write_yaml(paths["edited_resume_yaml"], edited_resume)
-        keywords_raw = context.get("intermediates", {}).get("jd_analysis_output", "")
-        keywords_md = strip_yaml_code_block(keywords_raw)
-        self._write_text(paths["keywords"], keywords_md)
-        planning_steps = [
-            ("jd_analysis", "EditorPrompt1"),
-            ("skill_mapping", "EditorPrompt2"),
-            ("profile_planning", "EditorPrompt3"),
-            ("bullet_points", "EditorPrompt4"),
-        ]
-        planning_md = self._make_transcript(context, planning_steps)
-        self._write_text(paths["planning_transcript"], planning_md)
-        optimization_steps = [
-            ("optimizer_prompt", "OptimizerPrompt"),
-            ("validation_prompt", "ValidationPrompt"),
-            ("feedback_prompt", "FeedbackPrompt"),
-        ]
-        optimization_md = self._make_transcript(context, optimization_steps)
-        self._write_text(paths["optimization_transcript"], optimization_md)
-        changelog_md = self._make_changelog(context)
-        self._write_text(paths["changelog"], changelog_md)
-        written = paths.copy()
-        # PDF (optional)
+            self.logger.error(f"[OutputManager] PDF compilation failed for {yaml_path}")
+        return success
+
+    def write_all_outputs(self, context: dict, job_info: dict, your_name: str, base_output_dir: Path, compile_pdf: bool = True):
+        """
+        Write all outputs (YAML, job description, keywords, PDF) using context dict and job info.
+        Output paths and filenames match the legacy conventions.
+        Args:
+            context: Pipeline context dict (must contain 'edited_resume', 'job_description', 'intermediates.keywords_output').
+            job_info: Dict with keys 'JobTitle', 'Company', 'Location', 'MatchScore'.
+            your_name: User's name (for filename generation).
+            base_output_dir: Base output directory (Path).
+            compile_pdf: Whether to compile the PDF (default True).
+        Returns:
+            Dict of written file paths.
+        """
+        # Generate filenames and directories using legacy logic
+        filenames = get_resume_filenames(
+            your_name=your_name,
+            job_title=job_info.get("JobTitle", "Unknown Job"),
+            company=job_info.get("Company", "Unknown Company"),
+            location=job_info.get("Location", "Remote"),
+            match_score=job_info.get("MatchScore", 0)
+        )
+        job_dir = base_output_dir / filenames["dir"]
+        job_dir.mkdir(parents=True, exist_ok=True)
+        yaml_path = base_output_dir / filenames["yaml"]
+        pdf_path = base_output_dir / filenames["pdf"]
+
+        written = {}
+        # Write edited resume YAML
+        try:
+            edited_resume = context['edited_resume']
+        except KeyError:
+            self.logger.error("[OutputManager] Missing 'edited_resume' in context.")
+            raise KeyError("Missing 'edited_resume' in context for YAML output.")
+        self.write_resume_yaml(edited_resume, yaml_path)
+        written['edited_resume_yaml'] = yaml_path
+        # Write job description
+        try:
+            job_description = context['job_description']
+        except KeyError:
+            self.logger.error("[OutputManager] Missing 'job_description' in context.")
+            raise KeyError("Missing 'job_description' in context for job description output.")
+        self.write_job_description(job_description, job_dir)
+        written['job_description'] = job_dir / 'job_description.md'
+        # Write keywords YAML
+        try:
+            keywords_yaml = context['intermediates']['keywords_output']
+        except KeyError:
+            self.logger.error("[OutputManager] Missing 'intermediates.keywords_output' in context.")
+            raise KeyError("Missing 'intermediates.keywords_output' in context for keywords output.")
+        self.write_keywords_yaml(keywords_yaml, job_dir)
+        written['keywords'] = job_dir / 'keywords.md'
+        # Get cache dir from config if available
+        cache_dir = self.config.get_cache_path() if self.config else './build'
+        cache_dir = Path(cache_dir)  # Ensure cache_dir is always a Path
+        # Use a per-job build dir
+        build_dir = cache_dir / job_dir.name
+        build_dir.mkdir(parents=True, exist_ok=True)
+        # Compile PDF if requested
+        # When compiling PDF, always use per-job build_dir
+        # If batch compilation is used, build a list of (yaml_path, pdf_path, build_dir) tuples
+        # For single job, just call ResumeCompiler.compile with build_dir
+        # (Assume this file only handles single-job output, but if batch, update accordingly)
+        written['edited_resume_pdf'] = pdf_path  # Always set, even before compilation
         if compile_pdf:
-            success = compile_resume(paths["edited_resume_yaml"], paths["edited_resume_pdf"], build_dir=cache_dir)
-            if success:
-                self.logger.info(f"PDF compiled: {paths['edited_resume_pdf']}")
+            pdf_success = self.compiler.compile(
+                content_file=written["edited_resume_yaml"],
+                output_path=pdf_path,
+                build_dir=build_dir
+            )
+            if pdf_success:
+                self.logger.info(f"[OutputManager] PDF compiled: {pdf_path}")
             else:
-                self.logger.error(f"PDF compilation failed for {paths['edited_resume_yaml']}")
-        # If you want to save the formatted_resume as a YAML file, do it here:
-        formatted_resume = pipeline_output.get("formatted_resume")
-        if formatted_resume is not None:
-            formatted_resume_path = job_dir / "formatted_resume.yaml"
-            self.save_formatted_resume_yaml(formatted_resume_path, formatted_resume)
-            written["formatted_resume_yaml"] = formatted_resume_path
+                self.logger.error(f"[OutputManager] PDF compilation failed for {written['edited_resume_yaml']}")
+        else:
+            self.logger.info("[OutputManager] PDF compilation skipped (compile_pdf=False)")
         return written
-
-    def _write_text(self, path: Path, content: str):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content or "")
-
-    def _write_yaml(self, path: Path, data: dict):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Separate out sections
-        sections = {'sections': data['sections']} if 'sections' in data else {}
-        rest = {k: v for k, v in data.items() if k != 'sections'}
-        # Serialize
-        sections_yaml = yaml.dump(sections, default_flow_style=False, allow_unicode=True, sort_keys=False) if sections else ''
-        rest_yaml = format_yaml_with_quotes(rest, exclude_sections=True)
-        # Combine
-        yaml_str = sections_yaml.strip() + '\n' + rest_yaml.strip() if sections else rest_yaml.strip()
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(yaml_str)
-
-    def _make_transcript(self, context: dict, steps: list) -> str:
-        """
-        Format transcript for a sequence of steps.
-        Each step: (prompt_key, prompt_label)
-        Uses intermediates: {prompt_key}_inputs and {prompt_key}_output
-        """
-        intermediates = context.get("intermediates", {})
-        lines = []
-        for prompt_key, prompt_label in steps:
-            human = intermediates.get(f"{prompt_key}_inputs")
-            ai = intermediates.get(f"{prompt_key}_output")
-            if human is not None:
-                lines.append(f"-- HUMAN MESSAGE ({prompt_label}) --\n{human}\n")
-            if ai is not None:
-                lines.append(f"-- AI MESSAGE ({prompt_label}) --\n{ai}\n")
-        return "\n".join(lines)
-
-    def _make_changelog(self, context: dict) -> str:
-        section_paths = context.get('section_paths')
-        if not section_paths:
-            print(f"[DEBUG] section_paths not in context, getting from config_manager")
-            section_paths = self.config_manager.get_section_paths()
-        versions = context.get('intermediates', {}).get('edited_resume_versions', [])
-        print(f"[DEBUG] section_paths = {section_paths}")
-        if not section_paths or not versions or len(versions) < 1:
-            print("[DEBUG] Not enough section_paths or versions for changelog.")
-            return 'No net updates.'
-        lines = []
-        for section in section_paths:
-            print(f"[DEBUG] Changelog for section: {section}")
-            vals = [extract_by_path_advanced(v, section) for v in versions]
-            for i, val in enumerate(vals):
-                print(f"  [DEBUG] Version {i}: {val}")
-            prev = vals[0]
-            change_count = 1
-            for i in range(1, len(vals)):
-                if vals[i] != prev:
-                    lines.append(f"# {section}\n**Change {change_count}**\nIN: {prev}\nOUT: {vals[i]}\n")
-                    change_count += 1
-                prev = vals[i]
-        return '\n'.join(lines)
