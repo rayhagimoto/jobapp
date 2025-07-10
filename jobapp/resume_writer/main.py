@@ -11,6 +11,7 @@ from jobapp.utils.filename import get_resume_filenames
 from jobapp.utils.fuzzy_find import fuzzy_find_job
 from .batch_optimizer import run_batch_optimization, get_job_by_query, process_single_job
 from .compiler import compile_resume
+import shutil
 
 async def main():
     args = parse_arguments()
@@ -31,21 +32,48 @@ async def main():
     compile_pdf = True if not hasattr(args, 'no_compile_pdf') else not args.no_compile_pdf
 
     if args.mode == "compile":
-        # Always compile PDF in this mode
         script_dir = Path(__file__).parent
         resume_template_dir = script_dir / "resume_template"
-        if args.content is None:
-            args.content = str(resume_template_dir / "contents" / "resume.yaml")
+        # If user runs 'jobapp resume compile .' or omits --content, search for YAML in current dir
+        if args.content is None or args.content == ".":
+            # Dynamically get the user's name prefix
+            try:
+                config = ConfigManager()
+                your_name = config.get_user_name()
+            except Exception as e:
+                logger.error(f"Could not determine user name for YAML search: {e}")
+                sys.exit(1)
+            # Format prefix as FirstName_LastName_
+            prefix = your_name.replace(" ", "_") + "_"
+            # Search for both .yaml and .yml, case-insensitive
+            candidates = list(Path.cwd().glob(f"{prefix}*.yaml")) + list(Path.cwd().glob(f"{prefix}*.yml"))
+            # Optionally, make case-insensitive by filtering
+            candidates = [f for f in candidates if f.name.lower().startswith(prefix.lower()) and f.suffix.lower() in ['.yaml', '.yml']]
+            print(f"[DEBUG] Found YAML candidates: {[c.name for c in candidates]}")
+            if not candidates:
+                print(f"[ERROR] No YAML file found in current directory matching '{prefix}*.yaml' or '{prefix}*.yml'")
+                sys.exit(1)
+            if len(candidates) > 1:
+                print(f"[WARNING] Multiple YAML files found. Using: {candidates[0].name}")
+            args.content = str(candidates[0])
         if args.output is None:
-            # Default: output PDF in same location as content YAML, with .pdf extension
             content_path = Path(args.content)
             args.output = str(content_path.with_suffix('.pdf'))
+        # Set build_dir to <cache_dir>/<yaml_basename_no_ext>
+        try:
+            config = ConfigManager()
+            cache_dir = config.get_cache_path() if config else './build'
+        except Exception:
+            cache_dir = './build'
+        content_path = Path(args.content)
+        build_dir = str(Path(cache_dir) / content_path.stem)
         compile_script = resume_template_dir / "compile_resume.py"
         cmd = [
             sys.executable,
             str(compile_script),
             "--content", args.content,
-            "--output", args.output
+            "--output", args.output,
+            "--build", build_dir
         ]
         try:
             result = subprocess.run(cmd, check=True, capture_output=False)
@@ -77,7 +105,7 @@ async def main():
             }
         else:
             query = ' '.join(args.query)
-            job_info = await get_job_by_query(query)
+            job_info = await get_job_by_query(query, config=config)
             if not job_info:
                 logger.error(f"Could not find a job matching query: '{query}'")
                 sys.exit(1)
@@ -102,7 +130,8 @@ async def main():
                 output_dir=output_dir,
                 overwrite=True,
                 compile_pdf=compile_pdf,
-                your_name=your_name
+                your_name=your_name,
+                config=config
             )
             if result.get('success'):
                 print(f"\n[SUCCESS] Single job optimization complete.")
@@ -156,7 +185,8 @@ async def main():
                 max_resumes=args.max_resumes,
                 overwrite=overwrite,
                 compile_pdf=compile_pdf,
-                your_name=your_name
+                your_name=your_name,
+                config=config
             )
         except KeyboardInterrupt:
             logger.info("Batch optimization cancelled by user.")
@@ -164,6 +194,23 @@ async def main():
         except Exception as e:
             logger.critical(f"An unexpected error occurred during batch optimization: {e}")
             sys.exit(1)
+    elif args.mode == "cache" and getattr(args, 'action', None) == "clean":
+        cache_dir = config.get_cache_path()
+        if not cache_dir or not Path(cache_dir).exists():
+            print(f"Cache directory does not exist: {cache_dir}")
+            return
+        print(f"Cleaning cache directory: {cache_dir}")
+        for item in Path(cache_dir).iterdir():
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+                print(f"Deleted: {item}")
+            except Exception as e:
+                print(f"Failed to delete {item}: {e}")
+        print("Cache clean complete.")
+        return
     else:
         logger.error(f"Unknown mode: {args.mode}")
         sys.exit(1)
