@@ -15,10 +15,10 @@ class SheetsManager:
     - Handles authentication using service account credentials.
     - Used for job tracking and batch operations.
     """
-    def __init__(self, spreadsheet_id=None, tab_name=None, creds_path=None):
+    def __init__(self, config=None, spreadsheet_id=None, tab_name=None, creds_path=None):
         load_dotenv()
         print("[DEBUG] Initializing SheetsManager...")
-        self.config = ConfigManager()
+        self.config = config or ConfigManager()
         
         # Get spreadsheet settings from config
         print("[DEBUG] Loading spreadsheet settings from config...")
