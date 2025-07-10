@@ -11,6 +11,40 @@ from collections import OrderedDict
 import re
 
 
+# --- Utility functions for pipeline integration ---
+def extract_code_blocks(text, language=None):
+    """
+    Extract code blocks from text. If language is specified, only extract blocks of that language.
+    Returns a list of code block contents (strings).
+    """
+    if language:
+        # Pattern for specific language: ```language\ncontent\n```
+        pattern = rf"```{re.escape(language)}\n(.*?)\n```"
+    else:
+        # Pattern for any language or no language: ```[language]\ncontent\n```
+        pattern = r"```(?:[a-zA-Z]*)\n(.*?)\n```"
+    contents = re.findall(pattern, text, re.DOTALL)
+    return contents
+
+def extract_yaml_blocks(text):
+    """
+    Extract YAML code blocks from text. Returns a list of YAML block contents (strings).
+    """
+    return extract_code_blocks(text, language='yaml')
+
+def deep_merge(dict1, dict2):
+    """
+    Deep merge dict2 into dict1. Returns a new merged dictionary.
+    """
+    merged = copy.deepcopy(dict1)
+    for key, value in dict2.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def load_yaml_with_formatting(file_path: Path) -> Tuple[Dict[str, Any], str]:
     """Load YAML file and return both the parsed dict and raw text."""
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -70,20 +104,22 @@ def format_yaml_with_quotes(data: Dict[str, Any], exclude_sections: bool = False
     # Custom YAML representer to handle quoting leaf values
     class QuotedYamlDumper(yaml.SafeDumper):
         pass
-    
+
     def quoted_string_representer(dumper, data):
         # Only escape LaTeX characters in values, not keys
         # We can detect if this is a key by checking if it ends with ':'
-        if data.endswith(':'):
-            # This is a key, don't escape LaTeX characters
+        # But we need to know if this is a value in the 'sections' list
+        # We'll use a context stack to track if we're inside 'sections'
+        if hasattr(dumper, '_in_sections') and dumper._in_sections:
+            # Do NOT LaTeX-escape, just quote as plain string
             return dumper.represent_scalar('tag:yaml.org,2002:str', data, style="'")
         else:
             # This is a value, escape LaTeX characters
             escaped_data = escape_latex_chars(data)
             return dumper.represent_scalar('tag:yaml.org,2002:str', escaped_data, style="'")
-    
+
     QuotedYamlDumper.add_representer(str, quoted_string_representer)
-    
+
     # Define section order
     ordered_sections = [
         "profile", "skills", "education", 
@@ -91,27 +127,35 @@ def format_yaml_with_quotes(data: Dict[str, Any], exclude_sections: bool = False
     ]
     if not exclude_sections:
         ordered_sections.insert(0, "sections")
-    
+
     # Make a deep copy so we don't mutate the original
     data_copy = copy.deepcopy(data)
-    
+
     # For 'sections', ensure no LaTeX escaping is applied to the list items
+    # We'll use a custom representer for the 'sections' list
     if "sections" in data_copy and isinstance(data_copy["sections"], list):
-        data_copy["sections"] = [str(s) for s in data_copy["sections"]]
-    
+        # Mark that we're in 'sections' for the dumper
+        def sections_representer(dumper, value):
+            # Set a flag so the string representer knows not to escape
+            dumper._in_sections = True
+            node = dumper.represent_list(value)
+            dumper._in_sections = False
+            return node
+        QuotedYamlDumper.add_representer(list, sections_representer)
+
     # Create ordered dict
     ordered_data = OrderedDict()
-    
+
     # Add sections in the specified order
     for section in ordered_sections:
         if section in data_copy and (not exclude_sections or section != 'sections'):
             ordered_data[section] = data_copy[section]
-    
+
     # Add any remaining sections
     for key, value in data_copy.items():
         if key not in ordered_data and (not exclude_sections or key != 'sections'):
             ordered_data[key] = value
-    
+
     # Generate YAML with all strings quoted and LaTeX escaped
     yaml_output = yaml.dump(
         dict(ordered_data), 
@@ -121,11 +165,11 @@ def format_yaml_with_quotes(data: Dict[str, Any], exclude_sections: bool = False
         indent=2,
         sort_keys=False
     )
-    
+
     # Post-process to remove quotes from keys and fix any double-escaped backslashes
     lines = yaml_output.split('\n')
     processed_lines = []
-    
+
     for line in lines:
         # Remove quotes from keys: 'key': becomes key:
         processed_line = re.sub(r"'([^']+)'(\s*:)", r'\1\2', line)
@@ -139,7 +183,7 @@ def format_yaml_with_quotes(data: Dict[str, Any], exclude_sections: bool = False
         # Fix any double-escaped backslashes in LaTeX commands
         processed_line = re.sub(r'\\\\(textcolor|textbf|emph|textit)', r'\\\1', processed_line)
         processed_lines.append(processed_line)
-    
+
     return '\n'.join(processed_lines)
 
 
